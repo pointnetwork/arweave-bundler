@@ -1,12 +1,13 @@
 port: PORT
-cache_base_url: CACHE_BASE_URL
 keystore: KEYSTORE
 arweave:
   host: ARWEAVE_HOST
   port: ARWEAVE_PORT
   protocol: ARWEAVE_PROTOCOL
-aws:
-  host: AWS_HOST
-  key: AWS_KEY
-  secret: AWS_SECRET
-  bucket: AWS_BUCKET
+
+s3:
+  protocol: S3_PROTOCOL
+  host: S3_HOST
+  key: S3_KEY
+  secret: S3_SECRET
+  bucket: S3_BUCKET

@@ -9,21 +9,21 @@ const key = require(config.keystore);
 
 const arweave = Arweave.init(config.arweave);
 
-const spacesEndpoint = new aws.Endpoint(config.aws.host);
+const spacesEndpoint = new aws.Endpoint(`${config.s3.protocol}://${config.s3.host}`);
 
 const s3 = new aws.S3({
   // region: 'us-east-1'
   endpoint: spacesEndpoint,
-  accessKeyId: config.aws.key,
-  secretAccessKey: config.aws.secret
+  accessKeyId: config.s3.key,
+  secretAccessKey: config.s3.secret
 });
 
-console.log('AWS_HOST', config.aws.host);
+console.log('AWS_HOST', `${config.s3.protocol}://${config.s3.host}`);
 
 const upload = multer({
   storage: multerS3({
     s3: s3,
-    bucket: config.aws.bucket,
+    bucket: config.s3.bucket,
     acl: 'public-read',
     key: function (request, _, cb) {
       // console.log('multer inside key function', {request, file: _, cb});
@@ -44,7 +44,7 @@ class Signer {
         }
 
         const name = request.__name;
-        const url = `${config.cache_base_url}/${name}`;
+        const url = `${config.s3.protocol}://${config.s3.bucket}${config.s3.host}/${name}`;
 
         const result = await new Promise((resolve, reject) => {
           try {
