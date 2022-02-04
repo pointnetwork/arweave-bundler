@@ -1,0 +1,13 @@
+port: 80
+cache_base_url: https://pointdisk.fra1.digitaloceanspaces.com
+keystore: '../keystore/key.json'
+arweave:
+  host: arweave.net
+  port: 443
+  protocol: https
+
+aws:
+  host:
+  key:
+  secret:
+  bucket: pointdisk

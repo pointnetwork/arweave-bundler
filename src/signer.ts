@@ -1,33 +1,29 @@
-const Arweave = require('arweave');
-const { ArweaveSigner, createData } = require('arbundles');
-const AWS = require('aws-sdk');
-const axios = require('axios');
-const https = require('https');
-const aws = require('aws-sdk');
-const multer = require('multer');
-const multerS3 = require('multer-s3');
-const key = require('../keystore/key.json');
+import Arweave from 'arweave';
+import https from 'https';
+import aws from 'aws-sdk';
+import multer from 'multer';
+import multerS3 from 'multer-s3';
+import config from 'config';
 
-const arweave = Arweave.init({
-  port: 443,
-  protocol: 'https',
-  host: 'arweave.net',
-});
+const key = require(config.keystore);
 
-const spacesEndpoint = new aws.Endpoint(process.env.AWS_HOST);
-console.log(process.env.AWS_HOST);
+const arweave = Arweave.init(config.arweave);
+
+const spacesEndpoint = new aws.Endpoint(config.aws.host);
+
 const s3 = new aws.S3({
+  // region: 'us-east-1'
   endpoint: spacesEndpoint,
-  accessKeyId: process.env.AWS_ACCESS_KEY,
-  secretAccessKey: process.env.AWS_SECRET
+  accessKeyId: config.aws.key,
+  secretAccessKey: config.aws.secret
 });
 
-console.log('AWS_HOST', process.env.AWS_HOST);
+console.log('AWS_HOST', config.aws.host);
 
 const upload = multer({
   storage: multerS3({
     s3: s3,
-    bucket: 'pointdisk',
+    bucket: config.aws.bucket,
     acl: 'public-read',
     key: function (request, _, cb) {
       // console.log('multer inside key function', {request, file: _, cb});
@@ -48,13 +44,13 @@ class Signer {
         }
 
         const name = request.__name;
-        const url = 'https://pointdisk.fra1.digitaloceanspaces.com/'+name;
+        const url = `${config.cache_base_url}/${name}`;
 
         const result = await new Promise((resolve, reject) => {
           try {
             https.get(url,function (res) {
               try {
-                const body: Buffer[] = [];
+                const body: Uint8Array[] = [];
                 res.on('data', function (chunk) { body.push(chunk); });
                 res.on('end', function () { resolve(Buffer.concat(body)); });
               } catch(e) { reject(e); }
@@ -171,4 +167,4 @@ function readableRandomStringMaker(length) {
   return result;
 }
 
-module.exports = new Signer();
+export default new Signer();

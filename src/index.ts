@@ -1,14 +1,15 @@
-var express = require('express');
-var app = express();
-const Router = require('express-promise-router');
+import {port} from 'config';
+import express from 'express';
+import Router from 'express-promise-router';
+import route from './routes'
+
+const app = express();
 const router = Router();
+
 app.use(router);
-
-require('./routes')(app, router);
-
-const port = process.env.PORT || 80;
+route(app, router);
 
 app.listen(port, err => {
   if(err) throw err;
-  console.log('%c Server running', 'color: green')
+  console.log(`%c Server is listening on port ${port}`, 'color: green')
 });

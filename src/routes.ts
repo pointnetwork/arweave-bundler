@@ -1,6 +1,6 @@
-const signer = require('./signer');
+import signer from './signer';
 
-module.exports = (_, router) => {
+export default (_, router) => {
   router.get('/address', signer.address);
   router.get('/balance', signer.balance);
   router.all('/sign', signer.sign);
