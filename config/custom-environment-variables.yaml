@@ -8,6 +8,7 @@ arweave:
 s3:
   protocol: S3_PROTOCOL
   host: S3_HOST
-  key: S3_KEY
-  secret: S3_SECRET
+  port: S3_PORT
+  key: S3_KEY_FILE
+  secret: S3_SECRET_FILE
   bucket: S3_BUCKET

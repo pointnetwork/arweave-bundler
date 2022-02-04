@@ -4,18 +4,24 @@ import aws from 'aws-sdk';
 import multer from 'multer';
 import multerS3 from 'multer-s3';
 import config from 'config';
+import {readFileSync, existsSync} from 'fs';
 
 const key = require(config.keystore);
 
 const arweave = Arweave.init(config.arweave);
 
-const spacesEndpoint = new aws.Endpoint(`${config.s3.protocol}://${config.s3.host}`);
+if (!config.s3.key || !existsSync(config.s3.key)) {
+  throw new Error('S3 key is not specified');
+}
+
+if (!config.s3.secret || !existsSync(config.s3.secret)) {
+  throw new Error('S3 secret is not specified');
+}
 
 const s3 = new aws.S3({
-  // region: 'us-east-1'
-  endpoint: spacesEndpoint,
-  accessKeyId: config.s3.key,
-  secretAccessKey: config.s3.secret
+  endpoint: new aws.Endpoint(`${config.s3.protocol}://${config.s3.host}:${config.s3.port}`),
+  accessKeyId: readFileSync(config.s3.key).toString(),
+  secretAccessKey: readFileSync(config.s3.secret).toString()
 });
 
 console.log('AWS_HOST', `${config.s3.protocol}://${config.s3.host}`);

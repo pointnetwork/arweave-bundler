@@ -8,6 +8,7 @@ arweave:
 s3:
   protocol: https
   host: fra1.digitaloceanspaces.com
+  port: 443
   key:
   secret:
   bucket: pointdisk
