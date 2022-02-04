@@ -1,5 +1,6 @@
 import Arweave from 'arweave';
 import https from 'https';
+import http from 'http';
 import aws from 'aws-sdk';
 import multer from 'multer';
 import multerS3 from 'multer-s3';
@@ -50,11 +51,11 @@ class Signer {
         }
 
         const name = request.__name;
-        const url = `${config.s3.protocol}://${config.s3.bucket}${config.s3.host}/${name}`;
+        const url = `${config.s3.protocol}://${config.s3.bucket}.${config.s3.host}/${name}`;
 
         const result = await new Promise((resolve, reject) => {
           try {
-            https.get(url,function (res) {
+            (config.s3.protocol === 'https' ? https : http).get(url,function (res) {
               try {
                 const body: Uint8Array[] = [];
                 res.on('data', function (chunk) { body.push(chunk); });
