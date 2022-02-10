@@ -1,5 +1,6 @@
 port: PORT
 keystore: KEYSTORE
+testmode: TESTMODE
 arweave:
   host: ARWEAVE_HOST
   port: ARWEAVE_PORT

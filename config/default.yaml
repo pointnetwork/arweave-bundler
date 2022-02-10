@@ -1,5 +1,6 @@
 port: 80
 keystore: '../keystore/key.json'
+testmode: 0
 arweave:
   host: arweave.net
   port: 443

@@ -6,10 +6,9 @@ import multer from 'multer';
 import multerS3 from 'multer-s3';
 import config from 'config';
 import {readFileSync, existsSync} from 'fs';
+import TestWeave from 'testweave-sdk';
 
 const key = require(config.keystore);
-
-const arweave = Arweave.init(config.arweave);
 
 if (!config.s3.key || !existsSync(config.s3.key)) {
   throw new Error('S3 key is not specified');
@@ -25,15 +24,14 @@ const s3 = new aws.S3({
   secretAccessKey: readFileSync(config.s3.secret).toString()
 });
 
-console.log('AWS_HOST', `${config.s3.protocol}://${config.s3.host}`);
+console.log('S3 host:', `${config.s3.protocol}://${config.s3.host}:${config.s3.port}`);
 
 const upload = multer({
   storage: multerS3({
-    s3: s3,
+    s3,
     bucket: config.s3.bucket,
     acl: 'public-read',
     key: function (request, _, cb) {
-      // console.log('multer inside key function', {request, file: _, cb});
       const name = readableRandomStringMaker(20);
       request.__name = name;
       cb(null, name);
@@ -42,55 +40,53 @@ const upload = multer({
 }).array('file', 1);
 
 class Signer {
-  async signPOST(request, response) {
-    const cb = async(request, response, resolve, reject, error) => {
-      try {
-        if (error) {
-          console.log(error);
-          reject(error);
-        }
+  signPOST(request, response) {
+    return upload(request, response, this.getTxId.bind(this, request, response));
+  }
 
-        const name = request.__name;
-        const url = `${config.s3.protocol}://${config.s3.bucket}.${config.s3.host}/${name}`;
+  async getTxId(request, response, error) {
+    if (error) {
+      response.json({status: 'error', code: 500, error});
+      return;
+    }
 
-        const result = await new Promise((resolve, reject) => {
-          try {
-            (config.s3.protocol === 'https' ? https : http).get(url,function (res) {
-              try {
-                const body: Uint8Array[] = [];
-                res.on('data', function (chunk) { body.push(chunk); });
-                res.on('end', function () { resolve(Buffer.concat(body)); });
-              } catch(e) { reject(e); }
-            });
-          } catch(e) { reject(e); }
-        });
+    try {
+      const name = request.__name;
+      const bucketName = config.s3.bucket && config.s3.bucket.trim();
+      const subdomain = bucketName ? `${bucketName}.` : '';
+      const url = `${config.s3.protocol}://${subdomain}${config.s3.host}:${config.s3.port}/${name}`;
 
-        const dataToSign = result;
-        const tagsToSign = this.getTagsFromRequest(request);
-        let transaction = await this.signTx(dataToSign, tagsToSign);
-        transaction = await this.broadcastTx(transaction);
+      const dataToSign = await new Promise((resolve, reject) => {
+        try {
+          (config.s3.protocol === 'https' ? https : http).get(url,function (res) {
+            try {
+              const body: Uint8Array[] = [];
+              res.on('data', function (chunk) { body.push(chunk); });
+              res.on('end', function () { resolve(Buffer.concat(body)); });
+            } catch(e) { reject(e); }
+          });
+        } catch(e) { reject(e); }
+      });
 
-        response.json({'status':'ok', 'code': 200, 'txid': transaction.id /*, 'bundler_response_status': response.status */ });
-        resolve(response);
-      } catch(e) {
-        reject(e);
-      }
-    };
 
-    return await new Promise((resolve, reject) => {
-      try {
-        upload(request, response, cb.bind(this, request, response, resolve, reject));
-      } catch(e) { reject(e); }
-    })
+      const tagsToSign = this.getTagsFromRequest(request);
+      const transaction = await this.signTx(dataToSign, tagsToSign);
+      const {id: txid} = await this.broadcastTx(transaction);
+
+      response.json({status: 'ok', code: 200, txid/*, bundler_response_status: response.status*/});
+    } catch (error) {
+      console.error('Upload error:', error);
+      response.json({status: 'error', code: 500, error});
+    }
   }
 
   getKey() {
     return key;
   }
 
-  async keyToAddress(key) {
+  keyToAddress(key) {
     // Get the wallet address for a private key
-    return await arweave.wallets.jwkToAddress(key);
+    return arweave.wallets.jwkToAddress(key);
   }
 
   async address(_, res) {
@@ -150,7 +146,10 @@ class Signer {
 
   async broadcastTx(transaction) {
     let uploader = await arweave.transactions.getUploader(transaction);
-    while (!uploader.isComplete) { await uploader.uploadChunk(); }
+
+    while (!uploader.isComplete) {
+      await uploader.uploadChunk();
+    }
 
     return transaction;
   }
@@ -173,5 +172,44 @@ function readableRandomStringMaker(length) {
   }
   return result;
 }
+
+const arweaveClient = Arweave.init({
+  ...config.arweave,
+  timeout: 20000,
+  logging: true
+});
+
+let arweave;
+
+if (parseInt(config.testmode)) {
+  let testWeave;
+  arweave = new Proxy({}, {
+    get: (_, prop) => prop !== 'transactions' ? arweaveClient[prop] : new Proxy({}, {
+      get: (_, txProp) => txProp !== 'getUploader' ? arweaveClient[prop][txProp] : async (upload, data) => {
+        const uploader = await arweaveClient[prop][txProp](upload, data);
+        return new Proxy({}, {
+          get: (_, uploaderProp) => uploaderProp !== 'uploadChunk' ? uploader[uploaderProp] : async (...args) => {
+            try {
+              if (!testWeave) {
+                testWeave = await TestWeave.init(arweave);
+                testWeave._rootJWK = key;
+              }
+              const result = await uploader[uploaderProp](...args);
+              await testWeave.mine();
+              return result;
+            } catch (e) {
+              console.error('Fatal error:', e);
+              throw e;
+            }
+          }
+        });
+      }
+    })
+  });
+} else {
+  arweave = arweaveClient;
+}
+
+arweave.network.getInfo().then((info) => console.info('Arweave network info:', info));
 
 export default new Signer();
