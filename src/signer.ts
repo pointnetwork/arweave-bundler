@@ -1,3 +1,4 @@
+// import {readFileSync, existsSync} from 'fs';
 import Arweave from 'arweave';
 import https from 'https';
 import http from 'http';
@@ -5,33 +6,50 @@ import aws from 'aws-sdk';
 import multer from 'multer';
 import multerS3 from 'multer-s3';
 import config from 'config';
-import {readFileSync, existsSync} from 'fs';
 import TestWeave from 'testweave-sdk';
 
-const key = require(config.keystore);
+// if (!config.s3.key || !existsSync(config.s3.key)) {
+//   throw new Error('S3 key is not specified');
+// }
 
-if (!config.s3.key || !existsSync(config.s3.key)) {
-  throw new Error('S3 key is not specified');
-}
+// if (!config.s3.secret || !existsSync(config.s3.secret)) {
+//   throw new Error('S3 secret is not specified');
+// }
 
-if (!config.s3.secret || !existsSync(config.s3.secret)) {
-  throw new Error('S3 secret is not specified');
-}
+// const accessKeyId = readFileSync(config.s3.key).toString().trim();
+// const secretAccessKey = readFileSync(config.s3.secret).toString().trim();
+
+const accessKeyId = config.s3.key;
+const secretAccessKey = config.s3.secret;
 
 const s3 = new aws.S3({
-  endpoint: new aws.Endpoint(`${config.s3.protocol}://${config.s3.host}:${config.s3.port}`),
-  accessKeyId: readFileSync(config.s3.key).toString(),
-  secretAccessKey: readFileSync(config.s3.secret).toString()
+  endpoint: `${config.s3.protocol}://${config.s3.host}:${config.s3.port}`, // new aws.Endpoint(`${config.s3.protocol}://${config.s3.host}:${config.s3.port}`),
+  accessKeyId,
+  secretAccessKey,
+  // s3ForcePathStyle: true, // needed with minio?
 });
 
-console.log('S3 host:', `${config.s3.protocol}://${config.s3.host}:${config.s3.port}`);
+console.log('S3 config:', config.s3);
+
+var params = {Bucket: config.s3.bucket, Key: 'testobject', Body: 'Hello from MinIO!!'};
+s3.putObject(params, function(err, data) {
+  if (err)
+    console.log(err)
+  else
+    console.log("Successfully uploaded data to testbucket/testobject", data);
+});
 
 const upload = multer({
   storage: multerS3({
     s3,
     bucket: config.s3.bucket,
     acl: 'public-read',
+    metadata: function (_, file, cb) {
+      console.log({mdfile: file});
+      cb(null, {});
+    },
     key: function (request, _, cb) {
+      console.log('name', request.body);
       const name = readableRandomStringMaker(20);
       request.__name = name;
       cb(null, name);
@@ -39,12 +57,15 @@ const upload = multer({
   })
 }).array('file', 1);
 
+const key = require(config.keystore);
+
 class Signer {
   signPOST(request, response) {
     return upload(request, response, this.getTxId.bind(this, request, response));
   }
 
   async getTxId(request, response, error) {
+    console.log({files: request.files, error})
     if (error) {
       response.json({status: 'error', code: 500, error});
       return;
@@ -52,22 +73,29 @@ class Signer {
 
     try {
       const name = request.__name;
+      console.log({name2: name})
       const bucketName = config.s3.bucket && config.s3.bucket.trim();
-      const subdomain = bucketName ? `${bucketName}.` : '';
-      const url = `${config.s3.protocol}://${subdomain}${config.s3.host}:${config.s3.port}/${name}`;
+      const subdomain = ''; // bucketName ? `${bucketName}.` : '';
+      const url = `${config.s3.protocol}://${subdomain}${config.s3.host}:${config.s3.port}/${bucketName}/${name}`;
 
       const dataToSign = await new Promise((resolve, reject) => {
         try {
-          (config.s3.protocol === 'https' ? https : http).get(url,function (res) {
+          const options = {headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
+          }};
+          (config.s3.protocol === 'https' ? https : http).get(url, options, function(res) {
             try {
               const body: Uint8Array[] = [];
-              res.on('data', function (chunk) { body.push(chunk); });
-              res.on('end', function () { resolve(Buffer.concat(body)); });
-            } catch(e) { reject(e); }
+              res.on('data', (chunk) => body.push(chunk));
+              res.on('end', () => resolve(Buffer.concat(body)));
+            } catch(e) {
+              reject(e);
+            }
           });
         } catch(e) { reject(e); }
       });
 
+      console.log({data: (dataToSign as Buffer).toString()});
 
       const tagsToSign = this.getTagsFromRequest(request);
       const transaction = await this.signTx(dataToSign, tagsToSign);
@@ -167,9 +195,11 @@ class Signer {
 function readableRandomStringMaker(length) {
   const source = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
   let result = '';
+  console.log({result, source, length});
   while (result.length < length) {
     result += source.charAt(Math.random()*62|0);
   }
+  console.log({result});
   return result;
 }
 
