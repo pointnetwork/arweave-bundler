@@ -23,10 +23,10 @@ const accessKeyId = config.s3.key;
 const secretAccessKey = config.s3.secret;
 
 const s3 = new aws.S3({
-  endpoint: `${config.s3.protocol}://${config.s3.host}:${config.s3.port}`, // new aws.Endpoint(`${config.s3.protocol}://${config.s3.host}:${config.s3.port}`),
+  endpoint: new aws.Endpoint(`${config.s3.protocol}://${config.s3.host}:${config.s3.port}`),
   accessKeyId,
   secretAccessKey,
-  // s3ForcePathStyle: true, // needed with minio?
+  s3ForcePathStyle: true, // needed with minio?
 });
 
 console.log('S3 config:', config.s3);
