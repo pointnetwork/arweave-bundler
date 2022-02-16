@@ -27,7 +27,9 @@
   "dependencies": {
     "arweave": "^1.10.17",
     "aws-sdk": "^2.1005.0",
+    "busboy": "^0.2.14",
     "config": "^3.3.7",
+    "ethereumjs-util": "^7.1.4",
     "express": "^4.17.1",
     "express-promise-router": "^4.1.0",
     "js-yaml": "^4.1.0",
@@ -36,6 +38,7 @@
     "testweave-sdk": "0.2.2"
   },
   "devDependencies": {
+    "@types/express": "^4.17.13",
     "@types/node": "^17.0.14",
     "nodemon": "^2.0.15",
     "ts-node": "^10.5.0",

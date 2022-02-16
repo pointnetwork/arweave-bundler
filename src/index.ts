@@ -9,7 +9,6 @@ const router = Router();
 app.use(router);
 route(app, router);
 
-app.listen(port, err => {
-  if(err) throw err;
+app.listen(port, () => {
   console.log(`%c Server is listening on port ${port}`, 'color: green')
 });
