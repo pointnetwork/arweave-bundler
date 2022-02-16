@@ -1,0 +1,27 @@
+name: Deploy
+
+on:
+  push:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: akhileshns/heroku-deploy@v3.12.12
+        with:
+          heroku_api_key: ${{secrets.HEROKU_API_KEY}}
+          heroku_app_name: test-arweave-bundler
+          heroku_email: ${{secrets.HEROKU_EMAIL}}
+          usedocker: true
+
+        env:
+          S3_PROTOCOL: production
+          S3_HOST: fra1.digitaloceanspaces.com
+          S3_PORT: 443
+          S3_KEY: ${{secrets.S3_KEY}}
+          S3_SECRET: ${{secrets.S3_SECRET}}
+          S3_BUCKET: pointdisk
+          ARWEAVE_HOST: arweave.net
+          ARWEAVE_PORT: 443
+          ARWEAVE_PROTOCOL: https
