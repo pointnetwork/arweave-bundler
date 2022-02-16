@@ -16,7 +16,7 @@ jobs:
           usedocker: true
 
         env:
-          S3_PROTOCOL: production
+          S3_PROTOCOL: https
           S3_HOST: fra1.digitaloceanspaces.com
           S3_PORT: 443
           S3_KEY: ${{secrets.S3_KEY}}
