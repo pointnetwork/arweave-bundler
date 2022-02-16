@@ -54,6 +54,9 @@ const upload = multer({
   })
 }).array('file', 1);
 
+
+console.log({'ar': config.arweave});
+
 const key = JSON.parse(config.arweave.key);
 
 class Signer {
