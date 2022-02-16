@@ -21,19 +21,19 @@ import { Request, Response } from 'express';
 // const accessKeyId = readFileSync(config.s3.key).toString().trim();
 // const secretAccessKey = readFileSync(config.s3.secret).toString().trim();
 
-const accessKeyId = config.s3.key;
-const secretAccessKey = config.s3.secret;
+const accessKeyId = config.get('s3.key') as string;
+const secretAccessKey = config.get('s3.secret') as string;
 
 const s3 = new aws.S3({
-  endpoint: new aws.Endpoint(`${config.s3.protocol}://${config.s3.host}:${config.s3.port}`),
+  endpoint: new aws.Endpoint(`${config.get('s3.protocol')}://${config.get('s3.host')}:${config.get('s3.port')}`),
   accessKeyId,
   secretAccessKey,
   s3ForcePathStyle: true, // needed with minio?
 });
 
-console.log('S3 config:', config.s3);
+console.log('S3 config:', config.get('s3'));
 
-var params = {Bucket: config.s3.bucket, Key: 'testobject', Body: 'Hello from MinIO!!'};
+var params = {Bucket: config.get('s3.bucket') as string, Key: 'testobject', Body: 'Hello from MinIO!!'};
 s3.putObject(params, function(err, data) {
   if (err)
     console.log(err)
@@ -44,7 +44,7 @@ s3.putObject(params, function(err, data) {
 const upload = multer({
   storage: multerS3({
     s3,
-    bucket: config.s3.bucket,
+    bucket: config.get('s3.bucket'),
     acl: 'public-read',
     key: function (request, _, cb) {
       const name = readableRandomStringMaker(20);
@@ -55,9 +55,9 @@ const upload = multer({
 }).array('file', 1);
 
 
-console.log({'ar': config.arweave});
+console.log({'ar': config.get('arweave')});
 
-const key = JSON.parse(config.arweave.key);
+const key = JSON.parse(config.get('arweave.key'));
 
 class Signer {
   signPOST(request: Request & { filePromise: Promise<Buffer>}, response: Response) {
@@ -76,17 +76,17 @@ class Signer {
     }
 
     try {
-      const name = request.__name;
-      const bucketName = config.s3.bucket && config.s3.bucket.trim();
-      const subdomain = ''; // bucketName ? `${bucketName}.` : '';
-      const url = `${config.s3.protocol}://${subdomain}${config.s3.host}:${config.s3.port}/${bucketName}/${name}`;
+      // const subdomain = ''; // bucketName ? `${bucketName}.` : '';
       const originalFile = await request.filePromise;
+      const url = `${config.get('s3.protocol')}://${config.get('s3.host')}:${config.get('s3.port')}/` +
+        `${config.get('s3.bucket')}/${request.__name}`;
+
       const dataToSign = await new Promise((resolve, reject) => {
         try {
           const options = {headers: {
               'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
           }};
-          (config.s3.protocol === 'https' ? https : http).get(url, options, function(res) {
+          (config.get('s3.protocol') === 'https' ? https : http).get(url, options, function(res) {
             try {
               const body: Uint8Array[] = [];
               res.on('data', (chunk) => body.push(chunk));
@@ -212,14 +212,14 @@ function readableRandomStringMaker(length) {
 }
 
 const arweaveClient = Arweave.init({
-  ...config.arweave,
+  ...config.get('arweave'),
   timeout: 20000,
   logging: true
 });
 
 let arweave;
 
-if (parseInt(config.testmode)) {
+if (parseInt(config.get('testmode'))) {
   let testWeave;
   arweave = new Proxy({}, {
     get: (_, prop) => prop !== 'transactions' ? arweaveClient[prop] : new Proxy({}, {

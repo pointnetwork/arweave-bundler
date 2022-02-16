@@ -11,6 +11,7 @@ jobs:
       - uses: actions/checkout@v2
       - uses: akhileshns/heroku-deploy@v3.12.12
         with:
+          dontuseforce: 1
           heroku_api_key: ${{secrets.HEROKU_API_KEY}}
           heroku_app_name: test-arweave-bundler
           heroku_email: ${{secrets.HEROKU_EMAIL}}
@@ -18,13 +19,18 @@ jobs:
           usedocker: true
 
         env:
+          NODE_ENV: production
           S3_PROTOCOL: https
           S3_HOST: fra1.digitaloceanspaces.com
           S3_PORT: 443
-          S3_KEY: ${{secrets.S3_KEY}}
-          S3_SECRET: ${{secrets.S3_SECRET}}
+          S3_KEY: key
+          # ${{secrets.S3_KEY}}
+          S3_SECRET: secret
+
+          # ${{secrets.S3_SECRET}}
           S3_BUCKET: pointdisk
           ARWEAVE_HOST: arweave.net
           ARWEAVE_PORT: 443
-          ARWEAVE_KEY: ${{secrets.ARWEAVE_TEST_KEY}}
+          ARWEAVE_KEY: arweaveKey
+          #${{secrets.ARWEAVE_TEST_KEY}}
           ARWEAVE_PROTOCOL: https
