@@ -54,7 +54,7 @@ const upload = multer({
   })
 }).array('file', 1);
 
-const key = require(config.keystore);
+const key = JSON.parse(config.arweave.key);
 
 class Signer {
   signPOST(request: Request & { filePromise: Promise<Buffer>}, response: Response) {

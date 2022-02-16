@@ -24,4 +24,5 @@ jobs:
           S3_BUCKET: pointdisk
           ARWEAVE_HOST: arweave.net
           ARWEAVE_PORT: 443
+          ARWEAVE_KEY: ${{secrets.ARWEAVE_TEST_KEY}}
           ARWEAVE_PROTOCOL: https
