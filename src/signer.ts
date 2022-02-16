@@ -7,6 +7,8 @@ import multer from 'multer';
 import multerS3 from 'multer-s3';
 import config from 'config';
 import TestWeave from 'testweave-sdk';
+import { getFileFromStream, hashFn } from './utils';
+import { Request, Response } from 'express';
 
 // if (!config.s3.key || !existsSync(config.s3.key)) {
 //   throw new Error('S3 key is not specified');
@@ -44,12 +46,7 @@ const upload = multer({
     s3,
     bucket: config.s3.bucket,
     acl: 'public-read',
-    metadata: function (_, file, cb) {
-      console.log({mdfile: file});
-      cb(null, {});
-    },
     key: function (request, _, cb) {
-      console.log('name', request.body);
       const name = readableRandomStringMaker(20);
       request.__name = name;
       cb(null, name);
@@ -60,12 +57,16 @@ const upload = multer({
 const key = require(config.keystore);
 
 class Signer {
-  signPOST(request, response) {
+  signPOST(request: Request & { filePromise: Promise<Buffer>}, response: Response) {
+    request.filePromise = getFileFromStream(request);
     return upload(request, response, this.getTxId.bind(this, request, response));
   }
 
-  async getTxId(request, response, error) {
-    console.log({files: request.files, error})
+  async getTxId(
+    request: Request & { filePromise: Promise<Buffer>, __name?: string },
+    response: Response,
+    error?: Error
+  ) {
     if (error) {
       response.json({status: 'error', code: 500, error});
       return;
@@ -73,11 +74,10 @@ class Signer {
 
     try {
       const name = request.__name;
-      console.log({name2: name})
       const bucketName = config.s3.bucket && config.s3.bucket.trim();
       const subdomain = ''; // bucketName ? `${bucketName}.` : '';
       const url = `${config.s3.protocol}://${subdomain}${config.s3.host}:${config.s3.port}/${bucketName}/${name}`;
-
+      const originalFile = await request.filePromise;
       const dataToSign = await new Promise((resolve, reject) => {
         try {
           const options = {headers: {
@@ -94,14 +94,19 @@ class Signer {
           });
         } catch(e) { reject(e); }
       });
-
-      console.log({data: (dataToSign as Buffer).toString()});
-
       const tagsToSign = this.getTagsFromRequest(request);
-      const transaction = await this.signTx(dataToSign, tagsToSign);
-      const {id: txid} = await this.broadcastTx(transaction);
-
-      response.json({status: 'ok', code: 200, txid/*, bundler_response_status: response.status*/});
+      const originalFileSignature = hashFn(originalFile).toString('hex');
+      const dataToSignSignature = hashFn(dataToSign as Buffer).toString('hex');
+      const originalSignature = tagsToSign.__pn_chunk_id;
+      if (originalFileSignature !== dataToSignSignature) {
+        console.error('Data retrieved from S3 seems to be corrupted');
+      }
+      if (originalFileSignature !== originalSignature) {
+        console.error('Data hash is different from chunkId, check hashFn or integrity of the data');
+      }
+      const transaction = await this.signTx(originalFile, tagsToSign);
+      const { id: txid } = await this.broadcastTx(transaction);
+      response.json({ status: 'ok', code: 200, txid/*, bundler_response_status: response.status*/ });
     } catch (error) {
       console.error('Upload error:', error);
       response.json({status: 'error', code: 500, error});
