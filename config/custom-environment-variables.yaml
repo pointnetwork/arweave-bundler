@@ -1,10 +1,10 @@
 port: PORT
-keystore: KEYSTORE
 testmode: TESTMODE
 arweave:
   host: ARWEAVE_HOST
   port: ARWEAVE_PORT
   protocol: ARWEAVE_PROTOCOL
+  key: ARWEAVE_KEY
 
 s3:
   protocol: S3_PROTOCOL
