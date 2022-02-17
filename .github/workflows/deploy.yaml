@@ -23,14 +23,10 @@ jobs:
           HD_S3_PROTOCOL: https
           HD_S3_HOST: fra1.digitaloceanspaces.com
           HD_S3_PORT: 443
-          HD_S3_KEY: key
-          # ${{secrets.S3_KEY}}
-          HD_S3_SECRET: secret
-
-          # ${{secrets.S3_SECRET}}
+          HD_S3_KEY: ${{secrets.S3_KEY}}
+          HD_S3_SECRET: ${{secrets.S3_SECRET}}
           HD_S3_BUCKET: pointdisk
           HD_ARWEAVE_HOST: arweave.net
           HD_ARWEAVE_PORT: 443
-          HD_ARWEAVE_KEY: arweaveKey
-          #${{secrets.ARWEAVE_TEST_KEY}}
+          HD_ARWEAVE_KEY: ${{secrets.ARWEAVE_TEST_KEY}}
           HD_ARWEAVE_PROTOCOL: https
