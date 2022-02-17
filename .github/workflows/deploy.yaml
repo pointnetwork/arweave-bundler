@@ -16,7 +16,7 @@ jobs:
           heroku_app_name: test-arweave-bundler
           heroku_email: ${{secrets.HEROKU_EMAIL}}
           healthcheck: "https://test-arweave-bundler.herokuapp.com/health"
-          delay: 10
+          delay: 5
           usedocker: true
 
         env:
