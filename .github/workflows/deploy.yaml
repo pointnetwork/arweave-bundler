@@ -17,6 +17,18 @@ jobs:
           heroku_email: ${{secrets.HEROKU_EMAIL}}
           # healthcheck: "https://test-arweave-bundler.herokuapp.com/health"
           usedocker: true
+          docker_build_args: |
+            NODE_ENV
+            S3_PROTOCOL
+            S3_HOST
+            S3_PORT
+            S3_KEY
+            S3_SECRET
+            S3_BUCKET
+            ARWEAVE_HOST
+            ARWEAVE_PORT
+            ARWEAVE_KEY
+            ARWEAVE_PROTOCOL
 
         env:
           NODE_ENV: production
