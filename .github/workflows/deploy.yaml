@@ -1,7 +1,9 @@
-name: Deploy
+name: Deploy-To-Heroku
 
 on:
   push:
+    tags:
+      - 'v*'
 
 jobs:
   build:
@@ -29,5 +31,5 @@ jobs:
           HD_S3_BUCKET: pointdisk
           HD_ARWEAVE_HOST: arweave.net
           HD_ARWEAVE_PORT: 443
-          HD_ARWEAVE_KEY: ${{secrets.ARWEAVE_TEST_KEY}}
+          HD_ARWEAVE_KEY: ${{secrets.ARWEAVE_PROD_KEY}}
           HD_ARWEAVE_PROTOCOL: https
