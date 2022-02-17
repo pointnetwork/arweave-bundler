@@ -31,7 +31,6 @@ const s3 = new aws.S3({
   s3ForcePathStyle: true, // needed with minio?
 });
 
-console.log('S3 config:', config.get('s3'));
 
 var params = {Bucket: config.get('s3.bucket') as string, Key: 'testobject', Body: 'Hello from MinIO!!'};
 s3.putObject(params, function(err, data) {
@@ -53,9 +52,6 @@ const upload = multer({
     }
   })
 }).array('file', 1);
-
-
-console.log({'ar': config.get('arweave')});
 
 const key = JSON.parse(config.get('arweave.key'));
 
