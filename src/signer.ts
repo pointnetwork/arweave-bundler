@@ -121,6 +121,10 @@ class Signer {
     return arweave.wallets.jwkToAddress(key);
   }
 
+  async health(_, res) {
+    res.sendStatus(200);
+  }
+
   async address(_, res) {
     const key = this.getKey();
     const address = await this.keyToAddress(key);
