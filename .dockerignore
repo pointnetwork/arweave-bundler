@@ -5,3 +5,4 @@ dist/
 .git/
 .gitignore
 .dockerignore
+_local/
