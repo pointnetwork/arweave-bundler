@@ -203,11 +203,9 @@ class Signer {
 function readableRandomStringMaker(length) {
   const source = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
   let result = '';
-  console.log({result, source, length});
   while (result.length < length) {
     result += source.charAt(Math.random()*62|0);
   }
-  console.log({result});
   return result;
 }
 
