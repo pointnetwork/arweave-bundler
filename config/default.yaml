@@ -1,9 +1,13 @@
 port: 80
 testmode: 0
 arweave:
-  host: arweave.net
-  port: 443
-  protocol: https
+  default_node_host: arweave.net
+  default_node_port: 443
+  default_node_protocol: https
+  timeout: 20000
+  worker_delay: 500
+  default_node_health_check_interval: 5000
+  logging: true
   key: ''
 
 s3:

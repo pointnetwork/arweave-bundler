@@ -1,9 +1,9 @@
 port: PORT
 testmode: TESTMODE
 arweave:
-  host: ARWEAVE_HOST
-  port: ARWEAVE_PORT
-  protocol: ARWEAVE_PROTOCOL
+  default_node_host: ARWEAVE_HOST
+  default_node_port: ARWEAVE_PORT
+  default_node_protocol: ARWEAVE_PROTOCOL
   key: ARWEAVE_KEY
 
 s3:

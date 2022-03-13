@@ -1,5 +1,3 @@
-// import {readFileSync, existsSync} from 'fs';
-import Arweave from 'arweave';
 import https from 'https';
 import http from 'http';
 import aws from 'aws-sdk';
@@ -9,6 +7,8 @@ import config from 'config';
 import TestWeave from 'testweave-sdk';
 import { getFileFromStream, hashFn } from './utils';
 import { Request, Response } from 'express';
+import {getWorkingArweaveClient} from "./nodeSelector";
+import Arweave from "arweave";
 
 // if (!config.s3.key || !existsSync(config.s3.key)) {
 //   throw new Error('S3 key is not specified');
@@ -103,8 +103,7 @@ class Signer {
       if (originalFileSignature !== originalSignature) {
         console.error('Data hash is different from chunkId, check hashFn or integrity of the data');
       }
-      const transaction = await this.signTx(originalFile, tagsToSign);
-      const { id: txid } = await this.broadcastTx(transaction);
+      const { id: txid } = await this.signAndBroadcastTx(originalFile, tagsToSign);
       response.json({ status: 'ok', code: 200, txid/*, bundler_response_status: response.status*/ });
     } catch (error) {
       console.error('Upload error:', error);
@@ -116,7 +115,8 @@ class Signer {
     return key;
   }
 
-  keyToAddress(key) {
+  async keyToAddress(key) {
+    const arweave = await getArweaveClient();
     // Get the wallet address for a private key
     return arweave.wallets.jwkToAddress(key);
   }
@@ -132,6 +132,7 @@ class Signer {
   }
 
   async balance(_, res) {
+    const arweave = await getArweaveClient();
     const key = this.getKey();
     const address = await this.keyToAddress(key);
     const balance = await arweave.wallets.getBalance(address);
@@ -163,9 +164,10 @@ class Signer {
     return tagsToSign;
   }
 
-  async signTx(data, tags) {
+  async signAndBroadcastTx(data, tags) {
+    const arweave = await getArweaveClient();
     // Real 'AR' mode
-    let transaction = await arweave.createTransaction({ data }, this.getKey());
+    const transaction = await arweave.createTransaction({ data }, this.getKey());
 
     // transaction.addTag('keccak256hex', hash);
     // transaction.addTag('pn_experiment', '1');
@@ -177,10 +179,6 @@ class Signer {
     // Sign
     await arweave.transactions.sign(transaction, this.getKey());
 
-    return transaction;
-  }
-
-  async broadcastTx(transaction) {
     let uploader = await arweave.transactions.getUploader(transaction);
 
     while (!uploader.isComplete) {
@@ -193,8 +191,7 @@ class Signer {
   async sign(req, res) {
     const dataToSign = this.getDataFromRequest(req);
     const tagsToSign = this.getTagsFromRequest(req);
-    let transaction = await this.signTx(dataToSign, tagsToSign);
-    transaction = await this.broadcastTx(transaction);
+    const transaction = await this.signAndBroadcastTx(dataToSign, tagsToSign);
 
     res.json({'status':'ok', 'txid': transaction.id /*, 'bundler_response_status': response.status */ });
   }
@@ -209,43 +206,52 @@ function readableRandomStringMaker(length) {
   return result;
 }
 
-const arweaveClient = Arweave.init({
-  ...config.get('arweave'),
-  timeout: 20000,
-  logging: true
-});
+const getArweaveClient = async (): Promise<Arweave> => {
+  let arweave;
+  const arweaveClient = await getWorkingArweaveClient();
 
-let arweave;
-
-if (parseInt(config.get('testmode'))) {
-  let testWeave;
-  arweave = new Proxy({}, {
-    get: (_, prop) => prop !== 'transactions' ? arweaveClient[prop] : new Proxy({}, {
-      get: (_, txProp) => txProp !== 'getUploader' ? arweaveClient[prop][txProp] : async (upload, data) => {
-        const uploader = await arweaveClient[prop][txProp](upload, data);
-        return new Proxy({}, {
-          get: (_, uploaderProp) => uploaderProp !== 'uploadChunk' ? uploader[uploaderProp] : async (...args) => {
-            try {
-              if (!testWeave) {
-                testWeave = await TestWeave.init(arweave);
-                testWeave._rootJWK = key;
+  if (parseInt(config.get('testmode'))) {
+    let testWeave;
+    return new Proxy({}, {
+      get: (_, prop) => prop !== 'transactions' ? arweaveClient[prop] : new Proxy({}, {
+        get: (_, txProp) => txProp !== 'getUploader' ? arweaveClient[prop][txProp] : async (upload, data) => {
+          const uploader = await arweaveClient[prop][txProp](upload, data);
+          return new Proxy({}, {
+            get: (_, uploaderProp) => uploaderProp !== 'uploadChunk' ? uploader[uploaderProp] : async (...args) => {
+              try {
+                if (!testWeave) {
+                  testWeave = await TestWeave.init(arweave);
+                  testWeave._rootJWK = key;
+                }
+                const result = await uploader[uploaderProp](...args);
+                await testWeave.mine();
+                return result;
+              } catch (e) {
+                console.error('Fatal error:', e);
+                throw e;
               }
-              const result = await uploader[uploaderProp](...args);
-              await testWeave.mine();
-              return result;
-            } catch (e) {
-              console.error('Fatal error:', e);
-              throw e;
             }
-          }
-        });
-      }
-    })
-  });
-} else {
-  arweave = arweaveClient;
+          });
+        }
+      })
+    }) as Arweave;
+  } else {
+    return arweaveClient;
+  }
 }
 
-arweave.network.getInfo().then((info) => console.info('Arweave network info:', info));
+getArweaveClient()
+  .then(client => {
+    client.network.getInfo()
+      .then((info) => console.info('Arweave network info:', info))
+      .catch(e => {
+        console.error('Failed to get arweave network info:');
+        console.error(e.message);
+      })
+  })
+  .catch(e => {
+    console.error('Default arweave client failed');
+    console.error(e.message);
+  })
 
 export default new Signer();
