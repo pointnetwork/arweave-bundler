@@ -6,7 +6,8 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "node dist/index.js",
-    "build": "tsc",
+    "start:dev": "nodemon",
+    "build": "tsc && cp -R src/db/migrations dist/db/",
     "watch": "tsc -w",
     "develop": "nodemon -i '**/node_modules/**' --ext 'ts,yaml' --exec 'ts-node src/index.ts'"
   },
@@ -28,6 +29,7 @@
   "dependencies": {
     "arweave": "^1.10.17",
     "aws-sdk": "^2.1005.0",
+    "axios": "^0.26.1",
     "busboy": "^0.2.14",
     "config": "^3.3.7",
     "ethereumjs-util": "^7.1.4",
@@ -36,6 +38,8 @@
     "js-yaml": "^4.1.0",
     "multer": "1.4.3",
     "multer-s3": "2.9.0",
+    "sqlite": "^4.0.25",
+    "sqlite3": "^5.0.2",
     "testweave-sdk": "0.2.2"
   },
   "devDependencies": {
