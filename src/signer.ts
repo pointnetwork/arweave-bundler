@@ -105,7 +105,13 @@ class Signer {
       }
       const transaction = await this.signTx(originalFile, tagsToSign);
       const { id: txid } = await this.broadcastTx(transaction);
-      response.json({ status: 'ok', code: 200, txid/*, bundler_response_status: response.status*/ });
+      const status = await arweaveClient.transactions.getStatus(txid);
+      console.log('Successfully processed transaction: ', {
+          id: txid,
+          status,
+          hash: originalSignature
+      });
+      response.json({ status: 'ok', code: 200, txid, tx_status: status });
     } catch (error) {
       console.error('Upload error:', error);
       response.json({status: 'error', code: 500, error});
@@ -226,7 +232,9 @@ if (parseInt(config.get('testmode'))) {
         return new Proxy({}, {
           get: (_, uploaderProp) => uploaderProp !== 'uploadChunk' ? uploader[uploaderProp] : async (...args) => {
             try {
+                console.log('Uploading chunk in test mode');
               if (!testWeave) {
+                  console.log('Initializing Testweave');
                 testWeave = await TestWeave.init(arweave);
                 testWeave._rootJWK = key;
               }
