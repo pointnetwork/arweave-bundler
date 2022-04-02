@@ -9,6 +9,7 @@ import config from 'config';
 import TestWeave from 'testweave-sdk';
 import { getFileFromStream, hashFn } from './utils';
 import { Request, Response } from 'express';
+import { log } from './utils/logger';
 
 // if (!config.s3.key || !existsSync(config.s3.key)) {
 //   throw new Error('S3 key is not specified');
@@ -35,9 +36,9 @@ const s3 = new aws.S3({
 var params = {Bucket: config.get('s3.bucket') as string, Key: 'testobject', Body: 'Hello from MinIO!!'};
 s3.putObject(params, function(err, data) {
   if (err)
-    console.log(err)
+    log.error(err)
   else
-    console.log("Successfully uploaded data to testbucket/testobject", data);
+    log.info("Successfully uploaded data to testbucket/testobject", data);
 });
 
 const upload = multer({
@@ -98,22 +99,28 @@ class Signer {
       const dataToSignSignature = hashFn(dataToSign as Buffer).toString('hex');
       const originalSignature = tagsToSign.__pn_chunk_id;
       if (originalFileSignature !== dataToSignSignature) {
-        console.error('Data retrieved from S3 seems to be corrupted');
+        log.error('Data retrieved from S3 seems to be corrupted');
       }
       if (originalFileSignature !== originalSignature) {
-        console.error('Data hash is different from chunkId, check hashFn or integrity of the data');
+        log.error('Data hash is different from chunkId, check hashFn or integrity of the data');
       }
       const transaction = await this.signTx(originalFile, tagsToSign);
       const { id: txid } = await this.broadcastTx(transaction);
       const status = await arweaveClient.transactions.getStatus(txid);
-      console.log('Successfully processed transaction: ', {
+      log.info('Successfully processed transaction: ', {
           id: txid,
           status,
           hash: originalSignature
       });
+      log.sendMetric({
+        arweaveTransaction: txid, tx_status: status, hash: originalSignature, arweaveTransactionFailure: false
+      });
       response.json({ status: 'ok', code: 200, txid, tx_status: status });
     } catch (error) {
-      console.error('Upload error:', error);
+      log.error('Upload error:', error);
+      log.sendMetric({
+        arweaveTransactionFailure: true
+      });
       response.json({status: 'error', code: 500, error});
     }
   }
@@ -157,7 +164,6 @@ class Signer {
   }
 
   getTagsFromRequest(req) {
-    // console.log('getTagsFromRequest, req.body', req.body, 'req.query', req.query)
     let tagsToSign;
     if (req.query && req.query.tags) {
       tagsToSign = req.query.tags;
@@ -232,9 +238,9 @@ if (parseInt(config.get('testmode'))) {
         return new Proxy({}, {
           get: (_, uploaderProp) => uploaderProp !== 'uploadChunk' ? uploader[uploaderProp] : async (...args) => {
             try {
-                console.log('Uploading chunk in test mode');
+                log.info('Uploading chunk in test mode');
               if (!testWeave) {
-                  console.log('Initializing Testweave');
+                  log.info('Initializing Testweave');
                 testWeave = await TestWeave.init(arweave);
                 testWeave._rootJWK = key;
               }
@@ -242,7 +248,7 @@ if (parseInt(config.get('testmode'))) {
               await testWeave.mine();
               return result;
             } catch (e) {
-              console.error('Fatal error:', e);
+              log.error('Fatal error:', e);
               throw e;
             }
           }
@@ -254,6 +260,6 @@ if (parseInt(config.get('testmode'))) {
   arweave = arweaveClient;
 }
 
-arweave.network.getInfo().then((info) => console.info('Arweave network info:', info));
+arweave.network.getInfo().then((info) => log.info('Arweave network info:', info));
 
 export default new Signer();
