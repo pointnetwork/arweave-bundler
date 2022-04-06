@@ -39,6 +39,7 @@
     "multer-s3": "2.9.0",
     "pino": "^7.9.2",
     "pino-multi-stream": "^6.0.0",
+    "pino-pretty": "^7.6.0",
     "pino-udp": "^1.0.1",
     "testweave-sdk": "0.2.2"
   },
