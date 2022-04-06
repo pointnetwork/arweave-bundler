@@ -1,6 +1,6 @@
 {
   "name": "arweave-bundler",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "A bundler and a cache for Arweave transactions made by Point Node",
   "main": "dist/index.js",
   "scripts": {
