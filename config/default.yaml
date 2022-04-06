@@ -13,3 +13,7 @@ s3:
   key: ''
   secret: ''
   bucket: pointdisk
+
+log:
+  level: info
+  sendLogsTo: http://logstash.pointspace.io:12201

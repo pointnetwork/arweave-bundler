@@ -22,7 +22,6 @@ jobs:
           usedocker: true
 
         env:
-          HD_NODE_ENV: production
           HD_S3_PROTOCOL: https
           HD_S3_HOST: fra1.digitaloceanspaces.com
           HD_S3_PORT: 443
