@@ -38,7 +38,7 @@ s3.putObject(params, function(err, data) {
   if (err)
     log.error(err)
   else
-    log.info("Successfully uploaded data to testbucket/testobject", data);
+    log.info(data, 'Successfully uploaded data to testbucket/testobject');
 });
 
 const upload = multer({
@@ -107,17 +107,17 @@ class Signer {
       const transaction = await this.signTx(originalFile, tagsToSign);
       const { id: txid } = await this.broadcastTx(transaction);
       const status = await arweaveClient.transactions.getStatus(txid);
-      log.info('Successfully processed transaction: ', {
+      log.info({
           id: txid,
           status,
           hash: originalSignature
-      });
+      }, 'Successfully processed transaction: ');
       log.sendMetric({
         arweaveTransaction: txid, tx_status: status, hash: originalSignature, arweaveTransactionFailure: false
       });
       response.json({ status: 'ok', code: 200, txid, tx_status: status });
     } catch (error) {
-      log.error('Upload error:', error);
+      log.error({error}, 'Upload error');
       log.sendMetric({
         arweaveTransactionFailure: true
       });
@@ -247,9 +247,9 @@ if (parseInt(config.get('testmode'))) {
               const result = await uploader[uploaderProp](...args);
               await testWeave.mine();
               return result;
-            } catch (e) {
-              log.error('Fatal error:', e);
-              throw e;
+            } catch (error) {
+              log.error({error}, 'Fatal error');
+              throw error;
             }
           }
         });
@@ -260,6 +260,6 @@ if (parseInt(config.get('testmode'))) {
   arweave = arweaveClient;
 }
 
-arweave.network.getInfo().then((info) => log.info('Arweave network info:', info));
+arweave.network.getInfo().then((info) => log.info(info, 'Arweave network info'));
 
 export default new Signer();
