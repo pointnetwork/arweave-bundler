@@ -10,6 +10,7 @@ import TestWeave from 'testweave-sdk';
 import {getFileFromStream, hashFn} from './utils';
 import {Request, Response} from 'express';
 import {log} from './utils/logger';
+import {pipeline} from 'stream';
 
 // if (!config.s3.key || !existsSync(config.s3.key)) {
 //   throw new Error('S3 key is not specified');
@@ -56,12 +57,12 @@ const key = JSON.parse(config.get('arweave.key'));
 class Signer {
     signPOST(request: Request & { filePromise: Promise<Buffer>}, response: Response) {
         if (!request.headers.chunkid) {
-          const errMsg = 'Request to /signPOST is missing the mandatory `chunkid` header.'
-          log.error(errMsg);
-          response.status(400).json({status: 'error', code: 400, errMsg});
-          return;
+            const errMsg = 'Request to /signPOST is missing the mandatory `chunkid` header.';
+            log.error(errMsg);
+            response.status(400).json({status: 'error', code: 400, errMsg});
+            return;
         }
-        log.info({chunkId: request.headers.chunkid}, 'Received request to upload chunk.')
+        log.info({chunkId: request.headers.chunkid}, 'Received request to upload chunk.');
         request.filePromise = getFileFromStream(request);
         return upload(request, response, this.getTxId.bind(this, request, response));
     }
@@ -223,22 +224,21 @@ class Signer {
             return;
         }
 
-        log.info({chunkId}, 'Request to fetch file from S3.');
+        log.info({chunkId}, 'Request to fetch chunk from S3.');
 
         const params = {
-          Bucket: config.get('s3.bucket'),
-          Key: chunkId,
+            Bucket: config.get('s3.bucket'),
+            Key: chunkId
         };
 
-        s3.getObject(params, (err, data) => {
-          if (err) {
-            log.error(err, `Error fetching file "${chunkId}" from S3`);
-            const statusCode = err.statusCode || 500;
-            res.status(statusCode).json({status: 'error', code: statusCode, err});
-            return;
-          }
-
-          res.json(data);
+        const fileStream = s3.getObject(params).createReadStream();
+        res.attachment(chunkId);
+        pipeline(fileStream, res, (err) => {
+            if (err) {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                const statusCode = (err as any)?.statusCode || 500;
+                res.status(statusCode).json({status: 'error', code: statusCode, err});
+            }
         });
     }
 }
