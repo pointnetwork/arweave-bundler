@@ -46,8 +46,6 @@ const upload = multer({
         bucket: config.get('s3.bucket'),
         acl: 'public-read',
         key: function (request, _, cb) {
-            // const name = readableRandomStringMaker(20);
-            // request.__name = name;
             cb(null, request.headers.chunkid);
         }
     })
@@ -217,48 +215,33 @@ class Signer {
     }
 
     async getFileFromS3(req: Request, res: Response) {
-        const {fileId} = req.params;
-        if (!fileId) {
-            const errMsg = 'Request is missing the required `fileId` param.';
+        const {chunkId} = req.params;
+        if (!chunkId) {
+            const errMsg = 'Request is missing the required `chunkId` param.';
             log.error(errMsg);
             res.status(400).json({status: 'error', code: 400, errMsg});
             return;
         }
 
-        log.info({fileId}, 'Request to fetch file from S3.');
+        log.info({chunkId}, 'Request to fetch file from S3.');
 
         const params = {
           Bucket: config.get('s3.bucket'),
-          Key: fileId,
+          Key: chunkId,
         };
 
         s3.getObject(params, (err, data) => {
           if (err) {
-            log.error(err, `Error fetching file "${fileId}" from S3`);
+            log.error(err, `Error fetching file "${chunkId}" from S3`);
             const statusCode = err.statusCode || 500;
             res.status(statusCode).json({status: 'error', code: statusCode, err});
             return;
-          }
-
-          try {
-            data.Body = data.Body?.toString();
-          } catch (error) {
-            log.warn({fileId, error}, 'Error converting `data.Body` to string');
           }
 
           res.json(data);
         });
     }
 }
-
-// function readableRandomStringMaker(length) {
-//     const source = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-//     let result = '';
-//     while (result.length < length) {
-//         result += source.charAt(Math.random() * 62 | 0);
-//     }
-//     return result;
-// }
 
 const arweaveClient = Arweave.init({
     ...config.get('arweave'),
