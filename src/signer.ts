@@ -46,9 +46,9 @@ const upload = multer({
         bucket: config.get('s3.bucket'),
         acl: 'public-read',
         key: function (request, _, cb) {
-            const name = readableRandomStringMaker(20);
-            request.__name = name;
-            cb(null, name);
+            // const name = readableRandomStringMaker(20);
+            // request.__name = name;
+            cb(null, request.headers.chunkid);
         }
     })
 }).array('file', 1);
@@ -57,12 +57,19 @@ const key = JSON.parse(config.get('arweave.key'));
 
 class Signer {
     signPOST(request: Request & { filePromise: Promise<Buffer>}, response: Response) {
+        if (!request.headers.chunkid) {
+          const errMsg = 'Request to /signPOST is missing the mandatory `chunkid` header.'
+          log.error(errMsg);
+          response.status(400).json({status: 'error', code: 400, errMsg});
+          return;
+        }
+        log.info({chunkId: request.headers.chunkid}, 'Received request to upload chunk.')
         request.filePromise = getFileFromStream(request);
         return upload(request, response, this.getTxId.bind(this, request, response));
     }
 
     async getTxId(
-        request: Request & { filePromise: Promise<Buffer>, __name?: string },
+        request: Request & { filePromise: Promise<Buffer> },
         response: Response,
         error?: Error
     ) {
@@ -75,7 +82,7 @@ class Signer {
             // const subdomain = ''; // bucketName ? `${bucketName}.` : '';
             const originalFile = await request.filePromise;
             const url = `${config.get('s3.protocol')}://${config.get('s3.host')}:${config.get('s3.port')}/` +
-        `${config.get('s3.bucket')}/${request.__name}`;
+        `${config.get('s3.bucket')}/${request.headers.chunkid}`;
 
             const dataToSign = await new Promise((resolve, reject) => {
                 try {
@@ -208,16 +215,50 @@ class Signer {
 
         res.json({status:'ok', txid: transaction.id /*, 'bundler_response_status': response.status */});
     }
+
+    async getFileFromS3(req: Request, res: Response) {
+        const {fileId} = req.params;
+        if (!fileId) {
+            const errMsg = 'Request is missing the required `fileId` param.';
+            log.error(errMsg);
+            res.status(400).json({status: 'error', code: 400, errMsg});
+            return;
+        }
+
+        log.info({fileId}, 'Request to fetch file from S3.');
+
+        const params = {
+          Bucket: config.get('s3.bucket'),
+          Key: fileId,
+        };
+
+        s3.getObject(params, (err, data) => {
+          if (err) {
+            log.error(err, `Error fetching file "${fileId}" from S3`);
+            const statusCode = err.statusCode || 500;
+            res.status(statusCode).json({status: 'error', code: statusCode, err});
+            return;
+          }
+
+          try {
+            data.Body = data.Body?.toString();
+          } catch (error) {
+            log.warn({fileId, error}, 'Error converting `data.Body` to string');
+          }
+
+          res.json(data);
+        });
+    }
 }
 
-function readableRandomStringMaker(length) {
-    const source = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-    let result = '';
-    while (result.length < length) {
-        result += source.charAt(Math.random() * 62 | 0);
-    }
-    return result;
-}
+// function readableRandomStringMaker(length) {
+//     const source = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+//     let result = '';
+//     while (result.length < length) {
+//         result += source.charAt(Math.random() * 62 | 0);
+//     }
+//     return result;
+// }
 
 const arweaveClient = Arweave.init({
     ...config.get('arweave'),
