@@ -10,6 +10,7 @@ import TestWeave from 'testweave-sdk';
 import {getFileFromStream, hashFn} from './utils';
 import {Request, Response} from 'express';
 import {log} from './utils/logger';
+import {pipeline} from 'stream';
 
 // if (!config.s3.key || !existsSync(config.s3.key)) {
 //   throw new Error('S3 key is not specified');
@@ -46,9 +47,7 @@ const upload = multer({
         bucket: config.get('s3.bucket'),
         acl: 'public-read',
         key: function (request, _, cb) {
-            const name = readableRandomStringMaker(20);
-            request.__name = name;
-            cb(null, name);
+            cb(null, request.headers.chunkid);
         }
     })
 }).array('file', 1);
@@ -57,12 +56,19 @@ const key = JSON.parse(config.get('arweave.key'));
 
 class Signer {
     signPOST(request: Request & { filePromise: Promise<Buffer>}, response: Response) {
+        if (!request.headers.chunkid) {
+            const errMsg = 'Request to /signPOST is missing the mandatory `chunkid` header.';
+            log.error(errMsg);
+            response.status(400).json({status: 'error', code: 400, errMsg});
+            return;
+        }
+        log.info({chunkId: request.headers.chunkid}, 'Received request to upload chunk.');
         request.filePromise = getFileFromStream(request);
         return upload(request, response, this.getTxId.bind(this, request, response));
     }
 
     async getTxId(
-        request: Request & { filePromise: Promise<Buffer>, __name?: string },
+        request: Request & { filePromise: Promise<Buffer> },
         response: Response,
         error?: Error
     ) {
@@ -75,7 +81,7 @@ class Signer {
             // const subdomain = ''; // bucketName ? `${bucketName}.` : '';
             const originalFile = await request.filePromise;
             const url = `${config.get('s3.protocol')}://${config.get('s3.host')}:${config.get('s3.port')}/` +
-        `${config.get('s3.bucket')}/${request.__name}`;
+        `${config.get('s3.bucket')}/${request.headers.chunkid}`;
 
             const dataToSign = await new Promise((resolve, reject) => {
                 try {
@@ -208,15 +214,33 @@ class Signer {
 
         res.json({status:'ok', txid: transaction.id /*, 'bundler_response_status': response.status */});
     }
-}
 
-function readableRandomStringMaker(length) {
-    const source = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-    let result = '';
-    while (result.length < length) {
-        result += source.charAt(Math.random() * 62 | 0);
+    async getFileFromS3(req: Request, res: Response) {
+        const {chunkId} = req.params;
+        if (!chunkId) {
+            const errMsg = 'Request is missing the required `chunkId` param.';
+            log.error(errMsg);
+            res.status(400).json({status: 'error', code: 400, errMsg});
+            return;
+        }
+
+        log.info({chunkId}, 'Request to fetch chunk from S3.');
+
+        const params = {
+            Bucket: config.get('s3.bucket'),
+            Key: chunkId
+        };
+
+        const fileStream = s3.getObject(params).createReadStream();
+        res.attachment(chunkId);
+        pipeline(fileStream, res, (err) => {
+            if (err) {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                const statusCode = (err as any)?.statusCode || 500;
+                res.status(statusCode).json({status: 'error', code: statusCode, err});
+            }
+        });
     }
-    return result;
 }
 
 const arweaveClient = Arweave.init({
