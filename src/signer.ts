@@ -36,7 +36,7 @@ const s3 = new aws.S3({
 const params = {Bucket: config.get('s3.bucket') as string, Key: 'testobject', Body: 'Hello from MinIO!!'};
 s3.putObject(params, function(err, data) {
     if (err)
-        log.error(err);
+        log.error({message: err.message, stack: err.stack});
     else
         log.info(data, 'Successfully uploaded data to testbucket/testobject');
 });
@@ -122,8 +122,8 @@ class Signer {
                 arweaveTransactionFailure: false
             });
             response.json({status: 'ok', code: 200, txid, tx_status: status});
-        } catch (error) {
-            log.error({error}, 'Upload error');
+        } catch (e) {
+            log.error({message: e.message, stack: e.stack}, 'Upload error');
             log.sendMetric({arweaveTransactionFailure: true});
             response.json({status: 'error', code: 500, error});
         }
@@ -269,9 +269,9 @@ if (parseInt(config.get('testmode'))) {
                             const result = await uploader[uploaderProp](...args);
                             await testWeave.mine();
                             return result;
-                        } catch (error) {
-                            log.error({error}, 'Fatal error');
-                            throw error;
+                        } catch (e) {
+                            log.error({message: e.message, stack: e.stack}, 'Fatal error');
+                            throw e;
                         }
                     }
                 });
