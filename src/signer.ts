@@ -102,7 +102,7 @@ class Signer {
             const dataToSignSignature = hashFn(dataToSign as Buffer).toString('hex');
             const originalSignature = tagsToSign.__pn_chunk_id;
             if (originalFileSignature !== dataToSignSignature) {
-                log.error('Data retrieved from S3 seems to be corrupted');
+                log.error(`Data retrieved from S3 seems to be corrupted. File from s3 contains: ${(dataToSign as Buffer).toString()}`);
             }
             if (originalFileSignature !== originalSignature) {
                 log.error('Data hash is different from chunkId, check hashFn or integrity of the data');

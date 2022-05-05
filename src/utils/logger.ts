@@ -16,6 +16,8 @@ const streams: any[] = [];
 let sendMetric = noop;
 
 if (sendLogsTo) {
+    // eslint-disable-next-line no-console
+    console.log(`Configuring logger to send logs to: ${sendLogsTo} with level: ${level}`);
     const [address, port] = (sendLogsTo.split('://').pop() as string).split(':');
     const udpTransport = new UdpTransport({address, port});
     streams.push(udpTransport);
@@ -30,6 +32,9 @@ if (sendLogsTo) {
         udpTransport
             .write(Buffer.from(JSON.stringify({...(originalChilds), ...metricsLabels})), noop);
     };
+} else {
+    // eslint-disable-next-line no-console
+    console.log('Logger is not sending logs to logstash');
 }
 
 streams.push(
@@ -39,7 +44,9 @@ streams.push(
     }
 );
 
-const logger = pino(options, multistream(streams));
+let logger = pino(options, multistream(streams));
+
+logger = logger.child({service: 'arweaveBundler'});
 
 const close = () => {
     for (const {stream} of streams) {

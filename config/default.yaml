@@ -16,4 +16,4 @@ s3:
 
 log:
   level: info
-  sendLogsTo: http://logstash.pointspace.io:12201
+  sendLogsTo: https://logstash.pointspace.io:12201
