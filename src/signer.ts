@@ -11,6 +11,7 @@ import {getFileFromStream, hashFn} from './utils';
 import {Request, Response} from 'express';
 import {log} from './utils/logger';
 import {pipeline} from 'stream';
+import { safeStringify } from './utils/safeStringify';
 
 // if (!config.s3.key || !existsSync(config.s3.key)) {
 //   throw new Error('S3 key is not specified');
@@ -34,11 +35,11 @@ const s3 = new aws.S3({
 });
 
 const params = {Bucket: config.get('s3.bucket') as string, Key: 'testobject', Body: 'Hello from MinIO!!'};
-s3.putObject(params, function(err, data) {
+s3.putObject(params, function(err) {
     if (err)
-        log.error({message: err.message, stack: err.stack});
+        log.error(`S3 error message for testobject: ${err.message}, stack: ${safeStringify(err.stack)}`);
     else
-        log.info(data, 'Successfully uploaded data to testbucket/testobject');
+        log.info('Successfully uploaded data to testbucket/testobject');
 });
 
 const upload = multer({
@@ -62,7 +63,7 @@ class Signer {
             response.status(400).json({status: 'error', code: 400, errMsg});
             return;
         }
-        log.info({chunkId: request.headers.chunkid}, 'Received request to upload chunk.');
+        log.info(`Received request to upload chunkId: ${request.headers.chunkid}`);
         request.filePromise = getFileFromStream(request);
         return upload(request, response, this.getTxId.bind(this, request, response));
     }
@@ -73,10 +74,11 @@ class Signer {
         error?: Error
     ) {
         if (error) {
-            response.json({status: 'error', code: 500, error});
-            return;
+            log.error(`Error uploading file to S3 ${safeStringify(error)}`);
+            return response.json({status: 'error', code: 500, error});
         }
-
+        const tagsToSign = this.getTagsFromRequest(request);
+        const chunkId = tagsToSign.__pn_chunk_id;
         try {
             // const subdomain = ''; // bucketName ? `${bucketName}.` : '';
             const originalFile = await request.filePromise;
@@ -97,33 +99,31 @@ class Signer {
                     });
                 } catch (e) { reject(e); }
             });
-            const tagsToSign = this.getTagsFromRequest(request);
+
             const originalFileSignature = hashFn(originalFile).toString('hex');
             const dataToSignSignature = hashFn(dataToSign as Buffer).toString('hex');
-            const originalSignature = tagsToSign.__pn_chunk_id;
+
             if (originalFileSignature !== dataToSignSignature) {
                 log.error(`Data retrieved from S3 seems to be corrupted. File from s3 contains: ${(dataToSign as Buffer).toString()}`);
+            } else {
+                log.info(`ChunkId: ${chunkId} was succesfully uploaded to S3. Url: ${url}`);
             }
-            if (originalFileSignature !== originalSignature) {
-                log.error('Data hash is different from chunkId, check hashFn or integrity of the data');
+            if (originalFileSignature !== chunkId) {
+                log.error(`Calculated chunkId from file: ${originalFileSignature} is different from chunkId: ${chunkId}`);
             }
             const transaction = await this.signTx(originalFile, tagsToSign);
             const {id: txid} = await this.broadcastTx(transaction);
             const status = await arweaveClient.transactions.getStatus(txid);
-            log.info({
-                id: txid,
-                status,
-                hash: originalSignature
-            }, 'Successfully processed transaction: ');
+            log.info(`Arweave result for txid: ${txid}, status: ${safeStringify(status)}, chunkId: ${chunkId}`);
             log.sendMetric({
                 arweaveTransaction: txid,
                 tx_status: status,
-                hash: originalSignature,
+                chunkId,
                 arweaveTransactionFailure: false
             });
             response.json({status: 'ok', code: 200, txid, tx_status: status});
         } catch (e) {
-            log.error({message: e.message, stack: e.stack}, 'Upload error');
+            log.error(`Upload error. Message: ${e.message}, stack: ${safeStringify(e.stack)}, chunkId: ${chunkId}`);
             log.sendMetric({arweaveTransactionFailure: true});
             response.json({status: 'error', code: 500, error});
         }
@@ -219,12 +219,11 @@ class Signer {
         const {chunkId} = req.params;
         if (!chunkId) {
             const errMsg = 'Request is missing the required `chunkId` param.';
-            log.error(errMsg);
-            res.status(400).json({status: 'error', code: 400, errMsg});
-            return;
+            log.error(`Route: download/chunkId, Error: ${errMsg}`);
+            return res.status(400).json({status: 'error', code: 400, errMsg});
         }
 
-        log.info({chunkId}, 'Request to fetch chunk from S3.');
+        log.info(`Request to fetch chunkId: ${chunkId} from S3`);
 
         const params = {
             Bucket: config.get('s3.bucket'),
@@ -235,10 +234,12 @@ class Signer {
         res.attachment(chunkId);
         pipeline(fileStream, res, (err) => {
             if (err) {
+                log.error(`chunkId: ${chunkId} coudn't be downloaded from S3 in download route. Error ${safeStringify(err)}`);
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 const statusCode = (err as any)?.statusCode || 500;
                 res.status(statusCode).json({status: 'error', code: statusCode, err});
             }
+            log.info(`chunkId: ${chunkId} was succesfully served by download route`);
         });
     }
 }
@@ -270,7 +271,7 @@ if (parseInt(config.get('testmode'))) {
                             await testWeave.mine();
                             return result;
                         } catch (e) {
-                            log.error({message: e.message, stack: e.stack}, 'Fatal error');
+                            log.fatal(`Message: ${e.message}, stack: ${safeStringify(e.stack)}`);
                             throw e;
                         }
                     }
@@ -282,6 +283,6 @@ if (parseInt(config.get('testmode'))) {
     arweave = arweaveClient;
 }
 
-arweave.network.getInfo().then((info) => log.info(info, 'Arweave network info'));
+arweave.network.getInfo().then((info) => log.info(`Arweave network info: ${safeStringify(info)}`));
 
 export default new Signer();
