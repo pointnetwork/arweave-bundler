@@ -4,6 +4,7 @@ import UdpTransport from 'pino-udp';
 import {multistream} from 'pino-multi-stream';
 import ecsFormat from '@elastic/ecs-pino-format';
 import config from 'config';
+import {version} from './../../package.json';
 
 const logCfg: { level: string, sendLogsTo: string } | undefined = config.get('log');
 const enabled = Boolean(logCfg);
@@ -46,7 +47,7 @@ streams.push(
 
 let logger = pino(options, multistream(streams));
 
-logger = logger.child({service: 'arweaveBundler'});
+logger = logger.child({service: `arweaveBundler ${version}`});
 
 const close = () => {
     for (const {stream} of streams) {
