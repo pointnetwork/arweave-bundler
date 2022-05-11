@@ -8,7 +8,7 @@ import {safeStringify} from '../utils/safeStringify';
 
 const DEFAULT_PART_SIZE_BYTES = 1024 * 1024 * 8; // 8MB. Don't change this value since it will affect how etags are calculated
 
-const DEFAULT_RETRY_POLICY = {
+export const DEFAULT_RETRY_POLICY = {
     retries: 3,
     minTimeout: 2000
 };

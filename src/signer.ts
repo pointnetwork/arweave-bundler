@@ -115,7 +115,7 @@ class Signer {
             }
             const objInfo = await this.storage.getObjectMetadata(file.chunkId);
 
-            if (!objInfo.ETag || !S3Storage.integrityCheck(objInfo.ETag + 1, file.etag)) {
+            if (!objInfo.ETag || !S3Storage.integrityCheck(objInfo.ETag, file.etag)) {
                 const errorMsg = objInfo.Etag ? `ChunkId found on S3 is corrupted. Etag on s3: ${objInfo.ETag} vs calculcated etag: ${file.etag}` :
                     `ChunkdId ${file.chunkId} not found on S3`;
                 log.info(errorMsg);
@@ -139,7 +139,10 @@ class Signer {
                 response.json({status: 'ok', code: 200, txid: tx.txid, tx_status: tx.status});
             } catch (error) {
                 log.error(`ChunkId ${file.chunkId} failed to upload to arweave due to error: ${error}`);
-                // TODO: check what went wrong in arweave
+                // what we want to return here? since the file is uploaded to s3 but arweave failed for some reason
+                // I think we should return 200, because the file was uploaded to S3, and we should handle this on the background
+                // so user doesnt send the file again and again
+                // response.json({status: 'ok', code: 200, txid: tx.txid, tx_status: tx.status});
             }
 
         });
@@ -283,6 +286,7 @@ class Signer {
     }
 
     async getFileFromS3Route(req: Request, res: Response) {
+        console.log({params: req.params});
         const {chunkId} = req.params;
         if (!chunkId) {
             const errMsg = 'Request is missing the required `chunkId` param.';
@@ -315,6 +319,12 @@ class Signer {
             });
         });
     }
+
+    async chunkIdTxsRoute(_req: Request, res: Response) {
+        const info = arweaveTxManager.getTxsInfo();
+        res.status(200).json(info);
+    }
+
 }
 
 export default new Signer();
