@@ -1,0 +1,33 @@
+name: Deploy-To-Heroku-Staging
+
+on: [workflow_dispatch]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    environment: prod
+    steps:
+      - uses: actions/checkout@v2
+      - uses: akhileshns/heroku-deploy@v3.12.12
+        with:
+          dontuseforce: 1
+          heroku_api_key: ${{secrets.HEROKU_API_KEY}}
+          heroku_app_name: arweave-bundler-staging
+          heroku_email: ${{secrets.HEROKU_EMAIL}}
+          healthcheck: "https://arweave-bundler-staging.herokuapp.com/health"
+          delay: 5
+          usedocker: true
+
+        env:
+          HD_S3_PROTOCOL: https
+          HD_S3_HOST: fra1.digitaloceanspaces.com
+          HD_S3_PORT: 443
+          HD_S3_KEY: ${{secrets.S3_KEY}}
+          HD_S3_SECRET: ${{secrets.S3_SECRET}}
+          HD_S3_BUCKET: pointdisk
+          HD_ARWEAVE_HOST: arweave.net
+          HD_ARWEAVE_PORT: 443
+          HD_ARWEAVE_KEY: ${{secrets.ARWEAVE_PROD_KEY}}
+          HD_ARWEAVE_PROTOCOL: https
+          HD_LOG_LEVEL: ${{secrets.LOG_LEVEL}}
+          HD_LOGSTASH_URL: ${{secrets.LOGSTASH_URL}}
