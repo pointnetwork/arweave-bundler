@@ -1,17 +1,25 @@
 // import {readFileSync, existsSync} from 'fs';
-import Arweave from 'arweave';
 import https from 'https';
 import http from 'http';
 import aws from 'aws-sdk';
-import multer from 'multer';
-import multerS3 from 'multer-s3';
 import config from 'config';
-import TestWeave from 'testweave-sdk';
-import {getFileFromStream, hashFn} from './utils';
+import {hashFn} from './utils';
 import {Request, Response} from 'express';
 import {log} from './utils/logger';
-import {pipeline} from 'stream';
+import {PassThrough, pipeline} from 'stream';
 import {safeStringify} from './utils/safeStringify';
+import {request as gqlRequest} from 'graphql-request';
+import getDownloadQuery from './utils/getDownloadQuery';
+import {delay} from './utils/delay';
+import formidable from 'formidable';
+import {S3Storage} from './storage/s3Storage';
+import {arweaveTxManager} from './arweaveTxManager';
+import {arweave} from './arweaveTxManager/arweave';
+
+const S3_URL = `${config.get('s3.protocol')}://${config.get('s3.host')}:${config.get('s3.port')}/` +
+`${config.get('s3.bucket')}`;
+const RETRY_TIME = 1;
+const GATEWAY_URL: string = config.get('storage.arweave_gateway_url');
 
 // if (!config.s3.key || !existsSync(config.s3.key)) {
 //   throw new Error('S3 key is not specified');
@@ -31,10 +39,15 @@ const s3 = new aws.S3({
     endpoint: new aws.Endpoint(`${config.get('s3.protocol')}://${config.get('s3.host')}:${config.get('s3.port')}`),
     accessKeyId,
     secretAccessKey,
+    computeChecksums: true,
     s3ForcePathStyle: true // needed with minio?
 });
 
-const params = {Bucket: config.get('s3.bucket') as string, Key: 'testobject', Body: 'Hello from MinIO!!'};
+const params = {
+    Bucket: config.get('s3.bucket') as string,
+    Key: 'testobject',
+    Body: 'Hello from MinIO!!'
+};
 s3.putObject(params, function(err) {
     if (err)
         log.error(`S3 error message for testobject: ${err.message}, stack: ${safeStringify(err.stack)}`);
@@ -42,91 +55,148 @@ s3.putObject(params, function(err) {
         log.info('Successfully uploaded data to testbucket/testobject');
 });
 
-const upload = multer({
-    storage: multerS3({
-        s3,
-        bucket: config.get('s3.bucket'),
-        acl: 'public-read',
-        key: function (request, _, cb) {
-            cb(null, request.headers.chunkid);
-        }
-    })
-}).array('file', 1);
-
 const key = JSON.parse(config.get('arweave.key'));
 
+interface AdditonalRequestParams {
+  filePromise: Promise<Buffer>
+  arweaveTxs?: string[];
+}
+
+function addMetadata(content) {
+    return {
+        content,
+        chunkId: hashFn(content).toString('hex'),
+        etag: S3Storage.calculateEtag(content)
+    };
+}
+
+function getContentFactory(addAdditionalInfo: (content) => any) {
+    return (files) => {
+        const passthrough = new PassThrough();
+        const chunks: Uint8Array[] = [];
+        passthrough.on('data', (chunk) => {
+            if (chunk) {
+                chunks.push(chunk);
+            }
+        });
+        passthrough.once('end', () => {
+            const content = Buffer.concat(chunks);
+            const fileInfo = addAdditionalInfo(content);
+            Object.entries(fileInfo).forEach(([key, value]) => files[key] = value);
+        });
+        return passthrough;
+    };
+}
+
 class Signer {
-    signPOST(request: Request & { filePromise: Promise<Buffer>}, response: Response) {
-        if (!request.headers.chunkid) {
-            const errMsg = 'Request to /signPOST is missing the mandatory `chunkid` header.';
-            log.error(errMsg);
-            response.status(400).json({status: 'error', code: 400, errMsg});
-            return;
-        }
-        log.info(`Received request to upload chunkId: ${request.headers.chunkid}`);
-        request.filePromise = getFileFromStream(request);
-        return upload(request, response, this.getTxId.bind(this, request, response));
+
+    storage: S3Storage;
+    constructor() {
+        this.storage = new S3Storage({
+            protocol: config.get('s3.protocol'),
+            host: config.get('s3.host'),
+            port: config.get('s3.port'),
+            defaultBucket: config.get('s3.bucket'),
+            accessKeyId,
+            secretAccessKey,
+            computeChecksums: true
+        });
+    }
+    async signPOST(request: Request & AdditonalRequestParams, response: Response) {
+        const form = formidable(
+            {fileWriteStreamHandler: getContentFactory(addMetadata)}
+        );
+        form.parse(request, async (err, fields, {file}) => {
+            if (err) {
+                log.error(safeStringify(err));
+                response.writeHead(err.httpCode || 400, {'Content-Type': 'text/plain'});
+                response.end(String(err));
+                return;
+            }
+            const objInfo = await this.storage.getObjectMetadata(file.chunkId);
+
+            if (!objInfo.ETag || !S3Storage.integrityCheck(objInfo.ETag, file.etag)) {
+                const errorMsg = objInfo.Etag ? `ChunkId found on S3 is corrupted. Etag on s3: ${objInfo.ETag} vs calculcated etag: ${file.etag}` :
+                    `ChunkdId ${file.chunkId} not found on S3`;
+                log.info(errorMsg);
+                try {
+                    const uploadFileResult = await this.storage.uploadFile(
+                        file.content,
+                        {key: file.chunkId});
+                    log.info(`ChunkId: ${file.chunkId} is up on S3 with etag: ${file.etag}, location: ${uploadFileResult.Location}`);
+                } catch (error) {
+                    log.error(safeStringify(error));
+                }
+            } else {
+                log.info(`ChunkId ${file.chunkId} found on S3 and integrity is ok. Skipping S3 uploading`);
+            }
+            try {
+                const tx = await arweaveTxManager.uploadChunk(
+                    {chunkId: file.chunkId, fileContent: file.content, tags: fields}
+                );
+                log.info(`ChunkId ${file.chunkId} was signed and broadcasted with arweave tx: ${tx.txid} status: ${safeStringify(tx.status)}`);
+                // TODO: add retry if status is 429 o 404
+                response.json({status: 'ok', code: 200, txid: tx.txid, tx_status: tx.status});
+            } catch (error) {
+                log.error(`ChunkId ${file.chunkId} failed to upload to arweave due to error: ${error}`);
+                // what we want to return here? since the file is uploaded to s3 but arweave failed for some reason
+                // I think we should return 200, because the file was uploaded to S3, and we should handle this on the background
+                // so user doesnt send the file again and again
+                // response.json({status: 'ok', code: 200, txid: tx.txid, tx_status: tx.status});
+            }
+
+        });
     }
 
-    async getTxId(
-        request: Request & { filePromise: Promise<Buffer> },
-        response: Response,
-        error?: Error
-    ) {
-        if (error) {
-            log.error(`Error uploading file to S3 ${safeStringify(error)}`);
-            return response.json({status: 'error', code: 500, error});
-        }
-        const tagsToSign = this.getTagsFromRequest(request);
-        const chunkId = tagsToSign.__pn_chunk_id;
+    async getArweaveTxs(chunkId: string, retry = 10): Promise<string[]> {
         try {
-            // const subdomain = ''; // bucketName ? `${bucketName}.` : '';
-            const originalFile = await request.filePromise;
-            const url = `${config.get('s3.protocol')}://${config.get('s3.host')}:${config.get('s3.port')}/` +
-        `${config.get('s3.bucket')}/${request.headers.chunkid}`;
-
-            const dataToSign = await new Promise((resolve, reject) => {
-                try {
-                    const options = {headers: {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}};
-                    (config.get('s3.protocol') === 'https' ? https : http).get(url, options, function(res) {
-                        try {
-                            const body: Uint8Array[] = [];
-                            res.on('data', (chunk) => body.push(chunk));
-                            res.on('end', () => resolve(Buffer.concat(body)));
-                        } catch (e) {
-                            reject(e);
-                        }
-                    });
-                } catch (e) { reject(e); }
-            });
-
-            const originalFileSignature = hashFn(originalFile).toString('hex');
-            const dataToSignSignature = hashFn(dataToSign as Buffer).toString('hex');
-
-            if (originalFileSignature !== dataToSignSignature) {
-                log.error(`Data retrieved from S3 seems to be corrupted. File from s3 contains: ${(dataToSign as Buffer).toString()}`);
-            } else {
-                log.info(`ChunkId: ${chunkId} was succesfully uploaded to S3. Url: ${url}`);
+            const queryResult: any = await gqlRequest(GATEWAY_URL, getDownloadQuery(chunkId, 'desc'));
+            if (queryResult.transactions.edges.length > 0) {
+                return queryResult.transactions.edges;
             }
-            if (originalFileSignature !== chunkId) {
-                log.error(`Calculated chunkId from file: ${originalFileSignature} is different from chunkId: ${chunkId}`);
+            return [];
+        } catch (error) {
+            if (retry > 0) {
+                await delay(RETRY_TIME);
+                return this.getArweaveTxs(chunkId, retry - 1);
             }
-            const transaction = await this.signTx(originalFile, tagsToSign);
-            const {id: txid} = await this.broadcastTx(transaction);
-            const status = await arweaveClient.transactions.getStatus(txid);
-            log.info(`Arweave result for txid: ${txid}, status: ${safeStringify(status)}, chunkId: ${chunkId}`);
-            log.sendMetric({
-                arweaveTransaction: txid,
-                tx_status: status,
-                chunkId,
-                arweaveTransactionFailure: false
-            });
-            response.json({status: 'ok', code: 200, txid, tx_status: status});
-        } catch (e) {
-            log.error(`Upload error. Message: ${e.message}, stack: ${safeStringify(e.stack)}, chunkId: ${chunkId}`);
-            log.sendMetric({arweaveTransactionFailure: true});
-            response.json({status: 'error', code: 500, error});
+            return [];
         }
+    }
+
+    checkFilesSignatures(fileFromS3, originalFile, chunkId) {
+        const originalFileSignature = hashFn(originalFile).toString('hex');
+        const dataToSignSignature = hashFn(fileFromS3 as Buffer).toString('hex');
+        if (originalFileSignature !== dataToSignSignature) {
+            log.error(`Data retrieved from S3 seems to be corrupted. File from s3 contains: ${(fileFromS3 as Buffer).toString()}`);
+        }
+        if (originalFileSignature !== chunkId) {
+            log.error(`Calculated chunkId from file: ${originalFileSignature} is different from provided chunkId: ${chunkId}`);
+        }
+    }
+
+    async uploadToArweave(file, tags) {
+        const transaction = await this.signTx(file, tags);
+        const {id: txid} = await this.broadcastTx(transaction);
+        const status = await arweave.transactions.getStatus(txid);
+        return {status, txid};
+    }
+
+    async getFileFromS3(chunkId) {
+        return new Promise((resolve, reject) => {
+            try {
+                const options = {headers: {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}};
+                (config.get('s3.protocol') === 'https' ? https : http).get(`${S3_URL}/${chunkId}`, options, function(res) {
+                    try {
+                        const body: Uint8Array[] = [];
+                        res.on('data', (chunk) => body.push(chunk));
+                        res.on('end', () => resolve(Buffer.concat(body)));
+                    } catch (e) {
+                        reject(e);
+                    }
+                });
+            } catch (e) { reject(e); }
+        });
     }
 
     getKey() {
@@ -215,7 +285,8 @@ class Signer {
         res.json({status:'ok', txid: transaction.id /*, 'bundler_response_status': response.status */});
     }
 
-    async getFileFromS3(req: Request, res: Response) {
+    async getFileFromS3Route(req: Request, res: Response) {
+        console.log({params: req.params});
         const {chunkId} = req.params;
         if (!chunkId) {
             const errMsg = 'Request is missing the required `chunkId` param.';
@@ -248,47 +319,12 @@ class Signer {
             });
         });
     }
+
+    async chunkIdTxsRoute(_req: Request, res: Response) {
+        const info = arweaveTxManager.getTxsInfo();
+        res.status(200).json(info);
+    }
+
 }
-
-const arweaveClient = Arweave.init({
-    ...config.get('arweave'),
-    timeout: 20000,
-    logging: true
-});
-
-let arweave;
-
-if (parseInt(config.get('testmode'))) {
-    let testWeave;
-    arweave = new Proxy({}, {
-        get: (_, prop) => prop !== 'transactions' ? arweaveClient[prop] : new Proxy({}, {
-            get: (_, txProp) => txProp !== 'getUploader' ? arweaveClient[prop][txProp] : async (upload, data) => {
-                const uploader = await arweaveClient[prop][txProp](upload, data);
-                return new Proxy({}, {
-                    get: (_, uploaderProp) => uploaderProp !== 'uploadChunk' ? uploader[uploaderProp] : async (...args) => {
-                        try {
-                            log.info('Uploading chunk in test mode');
-                            if (!testWeave) {
-                                log.info('Initializing Testweave');
-                                testWeave = await TestWeave.init(arweave);
-                                testWeave._rootJWK = key;
-                            }
-                            const result = await uploader[uploaderProp](...args);
-                            await testWeave.mine();
-                            return result;
-                        } catch (e) {
-                            log.fatal(`Message: ${e.message}, stack: ${safeStringify(e.stack)}`);
-                            throw e;
-                        }
-                    }
-                });
-            }
-        })
-    });
-} else {
-    arweave = arweaveClient;
-}
-
-arweave.network.getInfo().then((info) => log.info(`Arweave network info: ${safeStringify(info)}`));
 
 export default new Signer();

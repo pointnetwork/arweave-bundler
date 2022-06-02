@@ -6,6 +6,11 @@ arweave:
   protocol: https
   key: ''
 
+storage:
+  arweave_experiment_version_major: 1
+  arweave_experiment_version_minor: 8
+  arweave_gateway_url: https://arweave.net/graphql
+
 s3:
   protocol: https
   host: fra1.digitaloceanspaces.com

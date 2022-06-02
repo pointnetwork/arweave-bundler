@@ -6,7 +6,6 @@ import {log} from './utils/logger';
 
 const app = express();
 const router = Router();
-
 app.use(router);
 route(app, router);
 

@@ -6,5 +6,6 @@ export default (_, router) => {
     router.get('/balance', signer.balance.bind(signer));
     router.all('/sign', signer.sign.bind(signer));
     router.post('/signPOST', signer.signPOST.bind(signer));
-    router.get('/download/:chunkId', signer.getFileFromS3.bind(signer));
+    router.get('/download/:chunkId', signer.getFileFromS3Route.bind(signer));
+    router.get('/txs', signer.chunkIdTxsRoute.bind(signer));
 };
