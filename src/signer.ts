@@ -11,7 +11,7 @@ import {getFileFromStream, hashFn} from './utils';
 import {Request, Response} from 'express';
 import {log} from './utils/logger';
 import {pipeline} from 'stream';
-import { safeStringify } from './utils/safeStringify';
+import {safeStringify} from './utils/safeStringify';
 
 // if (!config.s3.key || !existsSync(config.s3.key)) {
 //   throw new Error('S3 key is not specified');
@@ -230,16 +230,22 @@ class Signer {
             Key: chunkId
         };
 
-        const fileStream = s3.getObject(params).createReadStream();
-        res.attachment(chunkId);
-        pipeline(fileStream, res, (err) => {
+        s3.headObject(params, (err) => {
             if (err) {
-                log.error(`chunkId: ${chunkId} coudn't be downloaded from S3 in download route. Error ${safeStringify(err)}`);
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                if (err.code === 'NotFound') {
+                    return res.sendStatus(404);
+                }
                 const statusCode = (err as any)?.statusCode || 500;
-                res.status(statusCode).json({status: 'error', code: statusCode, err});
+                return res.status(statusCode).json({status: 'error', code: statusCode, err});
             }
-            log.info(`chunkId: ${chunkId} was succesfully served by download route`);
+            const fileStream = s3.getObject(params).createReadStream();
+            res.attachment(chunkId);
+            pipeline(fileStream, res, (err) => {
+                if (err) {
+                    log.error(`chunkId: ${chunkId} coudn't be downloaded from S3 in download route. Error ${safeStringify(err)}`);
+                }
+                log.info(`chunkId: ${chunkId} was succesfully served by download route`);
+            });
         });
     }
 }
