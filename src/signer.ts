@@ -63,9 +63,11 @@ interface AdditonalRequestParams {
 }
 
 function addMetadata(content) {
+    const chunkId = hashFn(content).toString('hex');
+    log.info(`chunkId added in metadata ${chunkId}`);
     return {
         content,
-        chunkId: hashFn(content).toString('hex'),
+        chunkId,
         etag: S3Storage.calculateEtag(content)
     };
 }
@@ -81,7 +83,9 @@ function getContentFactory(addAdditionalInfo: (content) => any) {
         });
         passthrough.once('end', () => {
             const content = Buffer.concat(chunks);
+            log.info(`content: ${content.toString()}`);
             const fileInfo = addAdditionalInfo(content);
+            log.info(`fileInfo: ${safeStringify(fileInfo)}`);
             Object.entries(fileInfo).forEach(([key, value]) => files[key] = value);
         });
         return passthrough;
@@ -107,13 +111,15 @@ class Signer {
             {fileWriteStreamHandler: getContentFactory(addMetadata)}
         );
         form.parse(request, async (err, fields, {file}) => {
-            if (err) {
+            log.info(`${file.chunkId ? 'whenOk' : 'whenWrong'} - ${safeStringify({file, err, chunkId: file.chunkId, etag: file.etag, chid: file.newFilename})}`);
+            if (err || !file.chunkId) {
+                err = err || `Couldn't get chunkId from content stream. File must be corrupted or something is wrong with headers`;
                 log.error(safeStringify(err));
+                log.info(`errorInfo - ${safeStringify({file, err, chunkId: file.chunkId, etag: file.etag, chid: file.newFilename})}`);
                 response.writeHead(err.httpCode || 400, {'Content-Type': 'text/plain'});
                 response.end(String(err));
                 return;
             }
-            log.info(`signPOST - ${file.chunkId}`);
             const objInfo = await this.storage.getObjectMetadata(file.chunkId);
             log.info(`objInfo - ${safeStringify(objInfo)}`);
             if (!objInfo.ETag || !S3Storage.integrityCheck(objInfo.ETag, file.etag)) {
