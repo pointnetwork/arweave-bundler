@@ -107,7 +107,8 @@ class Signer {
             {fileWriteStreamHandler: getContentFactory(addMetadata)}
         );
         form.parse(request, async (err, fields, {file}) => {
-            if (err) {
+            if (err || !file.chunkId) {
+                err = err || `Couldn't get chunkId from content stream. File must be corrupted or something is wrong with headers`;
                 log.error(safeStringify(err));
                 response.writeHead(err.httpCode || 400, {'Content-Type': 'text/plain'});
                 response.end(String(err));
