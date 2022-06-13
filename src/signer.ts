@@ -148,6 +148,10 @@ class Signer {
         });
     }
 
+    async signPOST2(request: Request & AdditonalRequestParams, response: Response) {
+        response.json({headers: request.headers, body: request.body, url: request.url});
+    }
+
     async getArweaveTxs(chunkId: string, retry = 10): Promise<string[]> {
         try {
             const queryResult: any = await gqlRequest(GATEWAY_URL, getDownloadQuery(chunkId, 'desc'));
