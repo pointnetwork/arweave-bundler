@@ -11,9 +11,9 @@ jobs:
         with:
           dontuseforce: 1
           heroku_api_key: ${{secrets.HEROKU_API_KEY}}
-          heroku_app_name: arweave-bundler-staging
+          heroku_app_name: test-arweave-bundler
           heroku_email: ${{secrets.HEROKU_EMAIL}}
-          healthcheck: "https://arweave-bundler-staging.herokuapp.com/health"
+          healthcheck: "https://test-arweave-bundler.herokuapp.com/health"
           delay: 6
           usedocker: true
 

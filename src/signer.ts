@@ -113,8 +113,9 @@ class Signer {
                 response.end(String(err));
                 return;
             }
+            log.info(`signPOST - ${file.chunkId}`);
             const objInfo = await this.storage.getObjectMetadata(file.chunkId);
-
+            log.info(`objInfo - ${safeStringify(objInfo)}`);
             if (!objInfo.ETag || !S3Storage.integrityCheck(objInfo.ETag, file.etag)) {
                 const errorMsg = objInfo.Etag ? `ChunkId found on S3 is corrupted. Etag on s3: ${objInfo.ETag} vs calculcated etag: ${file.etag}` :
                     `ChunkdId ${file.chunkId} not found on S3`;
