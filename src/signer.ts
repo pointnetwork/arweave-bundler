@@ -130,21 +130,7 @@ class Signer {
             } else {
                 log.info(`ChunkId ${file.chunkId} found on S3 and integrity is ok. Skipping S3 uploading`);
             }
-            try {
-                const tx = await arweaveTxManager.uploadChunk(
-                    {chunkId: file.chunkId, fileContent: file.content, tags: fields}
-                );
-                log.info(`ChunkId ${file.chunkId} was signed and broadcasted with arweave tx: ${tx.txid} status: ${safeStringify(tx.status)}`);
-                // TODO: add retry if status is 429 o 404
-                response.json({status: 'ok', code: 200, txid: tx.txid, tx_status: tx.status});
-            } catch (error) {
-                log.error(`ChunkId ${file.chunkId} failed to upload to arweave due to error: ${error}`);
-                // what we want to return here? since the file is uploaded to s3 but arweave failed for some reason
-                // I think we should return 200, because the file was uploaded to S3, and we should handle this on the background
-                // so user doesnt send the file again and again
-                // response.json({status: 'ok', code: 200, txid: tx.txid, tx_status: tx.status});
-            }
-
+            response.json({status: 'ok', code: 200});
         });
     }
 
