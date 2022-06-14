@@ -106,7 +106,7 @@ class Signer {
         const form = formidable(
             {fileWriteStreamHandler: getContentFactory(addMetadata)}
         );
-        form.parse(request, async (err, fields, {file}) => {
+        form.parse(request, async (err, _, {file}) => {
             if (err) {
                 log.error(safeStringify(err));
                 response.writeHead(err.httpCode || 400, {'Content-Type': 'text/plain'});
