@@ -150,6 +150,21 @@ class Signer {
         }
     }
 
+    async isUploaded(request: Request, response: Response) {
+        const {chunkId} = request.params;
+        if (!chunkId) {
+            const errMsg = 'Request is missing the required `chunkId` param.';
+            log.error(`Route: is_uploaded/:chunkId, Error: ${errMsg}`);
+            return response.status(400).json({status: 'error', code: 400, errMsg});
+        }
+        const objInfo = await this.storage.getObjectMetadata(chunkId);
+        if (objInfo.ETag) {
+            response.json({status: 'ok', code: 200});
+        } else {
+            response.sendStatus(404);
+        }
+    }
+
     checkFilesSignatures(fileFromS3, originalFile, chunkId) {
         const originalFileSignature = hashFn(originalFile).toString('hex');
         const dataToSignSignature = hashFn(fileFromS3 as Buffer).toString('hex');
