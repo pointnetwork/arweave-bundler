@@ -97,6 +97,13 @@ export class S3Storage extends Storage<S3StorageOpts> {
         );
     }
 
+    async getObject(key: string, bucket?: string) {
+        return this.s3.getObject({
+            Bucket:  bucket || this.opts.defaultBucket,
+            Key: key
+        }).promise();
+    }
+
     async uploadFile(
         file: Buffer,
         config: { bucket?: string, key: string, ACL?: string, ContentType?: string, etag?: string }
