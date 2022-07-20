@@ -30,3 +30,4 @@ jobs:
           HD_ARWEAVE_PROTOCOL: https
           HD_LOG_LEVEL: ${{secrets.LOG_LEVEL}}
           HD_LOGSTASH_URL: ${{secrets.LOGSTASH_URL}}
+          HD_QUEUE_URL: ${{secrets.QUEUE_URL}}

@@ -22,3 +22,6 @@ s3:
 log:
   level: info
   sendLogsTo: https://logstash.pointspace.io:12201
+
+queue:
+  url: localhost

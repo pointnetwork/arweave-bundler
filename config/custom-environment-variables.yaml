@@ -17,3 +17,6 @@ s3:
 log:
   level: LOG_LEVEL
   sendLogsTo: LOGSTASH_URL
+
+queue:
+  url: QUEUE_URL
