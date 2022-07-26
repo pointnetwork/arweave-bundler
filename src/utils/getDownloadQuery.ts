@@ -4,7 +4,7 @@ import config from 'config';
 const getDownloadQuery = (chunkId: string, sort?: 'asc' | 'desc'): string =>
     gql`{
       transactions(
-        ${sort && (sort === 'asc' ? 'HEIGHT_ASC' : 'HEIGHT_DESC')}
+        ${sort && (sort === 'asc' ? 'sort: HEIGHT_ASC,' : 'sort: HEIGHT_DESC,') || ''}
         tags: [
           {
             name: "__pn_chunk_${config.get(

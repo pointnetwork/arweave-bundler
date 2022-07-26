@@ -1,6 +1,4 @@
 // import {readFileSync, existsSync} from 'fs';
-import https from 'https';
-import http from 'http';
 import aws from 'aws-sdk';
 import config from 'config';
 import {hashFn} from './utils';
@@ -8,29 +6,10 @@ import {Request, Response} from 'express';
 import {log} from './utils/logger';
 import {PassThrough, pipeline} from 'stream';
 import {safeStringify} from './utils/safeStringify';
-import {request as gqlRequest} from 'graphql-request';
-import getDownloadQuery from './utils/getDownloadQuery';
-import {delay} from './utils/delay';
 import formidable from 'formidable';
 import {S3Storage} from './storage/s3Storage';
-import {arweaveTxManager} from './arweaveTxManager';
-import {arweave} from './arweaveTxManager/arweave';
-
-const S3_URL = `${config.get('s3.protocol')}://${config.get('s3.host')}:${config.get('s3.port')}/` +
-`${config.get('s3.bucket')}`;
-const RETRY_TIME = 1;
-const GATEWAY_URL: string = config.get('storage.arweave_gateway_url');
-
-// if (!config.s3.key || !existsSync(config.s3.key)) {
-//   throw new Error('S3 key is not specified');
-// }
-
-// if (!config.s3.secret || !existsSync(config.s3.secret)) {
-//   throw new Error('S3 secret is not specified');
-// }
-
-// const accessKeyId = readFileSync(config.s3.key).toString().trim();
-// const secretAccessKey = readFileSync(config.s3.secret).toString().trim();
+import {queueBroker} from './utils/queueBroker';
+import {arweave} from './arweave';
 
 const accessKeyId = config.get('s3.key') as string;
 const secretAccessKey = config.get('s3.secret') as string;
@@ -91,6 +70,7 @@ function getContentFactory(addAdditionalInfo: (content) => any) {
 class Signer {
 
     storage: S3Storage;
+    queue = queueBroker;
     constructor() {
         this.storage = new S3Storage({
             protocol: config.get('s3.protocol'),
@@ -106,7 +86,7 @@ class Signer {
         const form = formidable(
             {fileWriteStreamHandler: getContentFactory(addMetadata)}
         );
-        form.parse(request, async (err, _, {file}) => {
+        form.parse(request, async (err, fields, {file}) => {
             if (err) {
                 log.error(safeStringify(err));
                 response.writeHead(err.httpCode || 400, {'Content-Type': 'text/plain'});
@@ -124,30 +104,23 @@ class Signer {
                         file.content,
                         {key: file.chunkId});
                     log.info(`ChunkId: ${file.chunkId} is up on S3 with etag: ${file.etag}, location: ${uploadFileResult.Location}`);
+                    try {
+                        const message = {chunkId: file.chunkId, fields};
+                        await queueBroker.sendDelayedMessage('verifyChunkId', message, {ttl: 0});
+                    } catch (e) {
+                        log.error(`Failed to enqueue message in verifyChunkId queue`);
+                        return response.sendStatus(500);
+                    }
                 } catch (error) {
                     log.error(safeStringify(error));
+                    return response.sendStatus(500);
                 }
             } else {
                 log.info(`ChunkId ${file.chunkId} found on S3 and integrity is ok. Skipping S3 uploading`);
+                this.queue.sendMessage('verifyChunkId', {chunkId: file.chunkId, fields});
             }
             response.json({status: 'ok', code: 200});
         });
-    }
-
-    async getArweaveTxs(chunkId: string, retry = 10): Promise<string[]> {
-        try {
-            const queryResult: any = await gqlRequest(GATEWAY_URL, getDownloadQuery(chunkId, 'desc'));
-            if (queryResult.transactions.edges.length > 0) {
-                return queryResult.transactions.edges;
-            }
-            return [];
-        } catch (error) {
-            if (retry > 0) {
-                await delay(RETRY_TIME);
-                return this.getArweaveTxs(chunkId, retry - 1);
-            }
-            return [];
-        }
     }
 
     async isUploaded(request: Request, response: Response) {
@@ -163,41 +136,6 @@ class Signer {
         } else {
             response.sendStatus(404);
         }
-    }
-
-    checkFilesSignatures(fileFromS3, originalFile, chunkId) {
-        const originalFileSignature = hashFn(originalFile).toString('hex');
-        const dataToSignSignature = hashFn(fileFromS3 as Buffer).toString('hex');
-        if (originalFileSignature !== dataToSignSignature) {
-            log.error(`Data retrieved from S3 seems to be corrupted. File from s3 contains: ${(fileFromS3 as Buffer).toString()}`);
-        }
-        if (originalFileSignature !== chunkId) {
-            log.error(`Calculated chunkId from file: ${originalFileSignature} is different from provided chunkId: ${chunkId}`);
-        }
-    }
-
-    async uploadToArweave(file, tags) {
-        const transaction = await this.signTx(file, tags);
-        const {id: txid} = await this.broadcastTx(transaction);
-        const status = await arweave.transactions.getStatus(txid);
-        return {status, txid};
-    }
-
-    async getFileFromS3(chunkId) {
-        return new Promise((resolve, reject) => {
-            try {
-                const options = {headers: {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}};
-                (config.get('s3.protocol') === 'https' ? https : http).get(`${S3_URL}/${chunkId}`, options, function(res) {
-                    try {
-                        const body: Uint8Array[] = [];
-                        res.on('data', (chunk) => body.push(chunk));
-                        res.on('end', () => resolve(Buffer.concat(body)));
-                    } catch (e) {
-                        reject(e);
-                    }
-                });
-            } catch (e) { reject(e); }
-        });
     }
 
     getKey() {
@@ -287,7 +225,6 @@ class Signer {
     }
 
     async getFileFromS3Route(req: Request, res: Response) {
-        console.log({params: req.params});
         const {chunkId} = req.params;
         if (!chunkId) {
             const errMsg = 'Request is missing the required `chunkId` param.';
@@ -319,11 +256,6 @@ class Signer {
                 log.info(`chunkId: ${chunkId} was succesfully served by download route`);
             });
         });
-    }
-
-    async chunkIdTxsRoute(_req: Request, res: Response) {
-        const info = arweaveTxManager.getTxsInfo();
-        res.status(200).json(info);
     }
 
 }

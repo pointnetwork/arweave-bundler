@@ -1,8 +1,8 @@
 import Arweave from 'arweave';
 import config from 'config';
 import TestWeave from 'testweave-sdk';
-import {log} from '../utils/logger';
-import {safeStringify} from '../utils/safeStringify';
+import {log} from './utils/logger';
+import {safeStringify} from './utils/safeStringify';
 const key = JSON.parse(config.get('arweave.key'));
 
 const arweaveClient = Arweave.init({
